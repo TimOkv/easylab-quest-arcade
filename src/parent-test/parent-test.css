@@ -1,0 +1,169 @@
+/* Стенд parent_test.html. Только классы .ezq-pt-*; без переменных и тегов. */
+
+.ezq-pt-root {
+  position: fixed;
+  inset: 0;
+  box-sizing: border-box;
+  overflow: auto;
+  padding: 16px;
+  background: #0e1330;
+  color: #e9eeff;
+  font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.ezq-pt-header { margin-bottom: 12px; }
+.ezq-pt-title { margin: 0; font-size: 22px; font-weight: 800; }
+.ezq-pt-sub { margin: 4px 0 0; color: #aab4d4; font-size: 14px; }
+
+.ezq-pt-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.ezq-pt-frame {
+  position: sticky;
+  top: 0;
+  aspect-ratio: 16 / 10;
+  min-height: 420px;
+  border: 3px solid #0068ff;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #000;
+}
+
+.ezq-pt-frame__iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.ezq-pt-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ezq-pt-card {
+  padding: 12px;
+  border: 1px solid #2c3670;
+  border-radius: 12px;
+  background: #151c44;
+}
+
+.ezq-pt-h2 { margin: 0 0 8px; font-size: 15px; font-weight: 800; color: #9bc4ff; }
+
+.ezq-pt-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr 110px;
+  gap: 8px;
+}
+
+.ezq-pt-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ezq-pt-field__label { font-size: 12px; color: #aab4d4; }
+
+.ezq-pt-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 38px;
+  padding: 6px 10px;
+  border: 1px solid #3a4690;
+  border-radius: 8px;
+  background: #0e1330;
+  color: #fff;
+  font: inherit;
+}
+
+.ezq-pt-auto { display: block; margin: 10px 0; font-size: 13px; color: #cbd4f5; }
+.ezq-pt-check { vertical-align: middle; }
+
+.ezq-pt-btn {
+  min-height: 38px;
+  padding: 6px 14px;
+  border: 1px solid #3a4690;
+  border-radius: 8px;
+  background: #222c66;
+  color: #fff;
+  font: 600 14px/1.2 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.ezq-pt-btn:hover { filter: brightness(1.15); }
+.ezq-pt-btn--main { width: 100%; background: #0068ff; border-color: #0068ff; font-size: 15px; }
+.ezq-pt-btn--danger { background: #7a1830; border-color: #ff1f4b; }
+
+.ezq-pt-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.ezq-pt-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.ezq-pt-tile {
+  padding: 8px;
+  border-radius: 10px;
+  background: #151c44;
+  border: 1px solid #2c3670;
+  text-align: center;
+}
+
+.ezq-pt-tile__value { font: 800 17px/1.2 ui-monospace, Menlo, Consolas, monospace; color: #ffc933; word-break: break-all; }
+.ezq-pt-tile__label { font-size: 11px; color: #aab4d4; }
+
+.ezq-pt-loghead { display: flex; align-items: center; justify-content: space-between; }
+.ezq-pt-counter { padding: 1px 8px; border-radius: 999px; background: #0068ff; font-size: 12px; font-weight: 700; }
+
+.ezq-pt-log {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 460px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ezq-pt-log__empty { color: #aab4d4; font-size: 13px; }
+
+.ezq-pt-log__item {
+  padding: 8px;
+  border-radius: 8px;
+  background: #0e1330;
+  border-left: 4px solid #2bd47d;
+}
+
+.ezq-pt-log__item--out { border-left-color: #b8a4fc; }
+
+.ezq-pt-log__meta { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; font-size: 12px; }
+.ezq-pt-log__time { font-family: ui-monospace, Menlo, Consolas, monospace; color: #aab4d4; }
+.ezq-pt-log__dir { color: #2bd47d; font-weight: 700; }
+.ezq-pt-log__item--out .ezq-pt-log__dir { color: #b8a4fc; }
+.ezq-pt-log__type { font-weight: 800; color: #fff; }
+.ezq-pt-log__origin { color: #8e8a94; }
+
+.ezq-pt-log__json {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #080b1e;
+  color: #cfe0ff;
+  font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+@media (max-width: 900px) {
+  .ezq-pt-root { padding: 10px; }
+  .ezq-pt-main { grid-template-columns: 1fr; }
+  .ezq-pt-frame { position: relative; aspect-ratio: auto; height: 62vh; min-height: 360px; }
+  .ezq-pt-fields { grid-template-columns: 1fr 1fr; }
+  .ezq-pt-summary { grid-template-columns: repeat(2, 1fr); }
+  .ezq-pt-log { max-height: none; }
+}

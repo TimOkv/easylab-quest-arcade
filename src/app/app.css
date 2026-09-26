@@ -219,32 +219,67 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* ---- Заглушки экранов (заменяются тасками 03/04/05) ---- */
+/* ---- Экран загрузки (ожидание EASYLAB_AUTH_INIT во встраивании, ≤ 1.5 с) ---- */
 
-.ezq-placeholder {
+.ezq-loading {
   position: absolute;
   inset: 0;
+  z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 14px;
+  background: radial-gradient(ellipse at center, var(--ezq-navy) 0%, var(--ezq-navy-deep) 70%);
+}
+
+.ezq-loading__logo {
+  padding: 10px 22px;
+  border-radius: 16px;
+  background: var(--ezq-blue);
+  color: var(--ezq-white);
+  font: 800 28px/1 var(--ezq-font);
+  letter-spacing: 0.02em;
+  box-shadow: 0 0 0 4px var(--ezq-wood-dark), 0 0 32px rgba(0, 104, 255, 0.55);
+  animation: ezq-loading-pulse 1.2s ease-in-out infinite;
+}
+
+.ezq-loading__dots {
+  display: flex;
   gap: 8px;
-  text-align: center;
 }
 
-.ezq-placeholder__title {
-  font-size: 28px;
-  font-weight: 800;
+.ezq-loading__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ezq-blue-light);
+  animation: ezq-loading-dot 0.9s ease-in-out infinite;
+}
+
+.ezq-loading__dot:nth-child(2) { animation-delay: 0.15s; }
+.ezq-loading__dot:nth-child(3) { animation-delay: 0.3s; }
+
+.ezq-loading__text {
   color: var(--ezq-blue-light);
+  font-size: 15px;
 }
 
-.ezq-placeholder__text {
-  color: var(--ezq-panel-muted);
+@keyframes ezq-loading-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+
+@keyframes ezq-loading-dot {
+  0%, 100% { opacity: 0.3; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-6px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .ezq-btn,
-  .ezq-toast {
+  .ezq-toast,
+  .ezq-loading__logo,
+  .ezq-loading__dot {
     transition: none;
     animation: none;
   }

@@ -16,6 +16,11 @@ export interface ArcadeScreenDeps {
   sfx: Sfx;
   onGameOver(result: RunResult): void;
   onOpenLeaderboard(): void;
+  /**
+   * «Сегодня в рейтинг: X / лимит» (история 60). Нет — демо-режим, строки нет. Строка видна, только пока
+   * `isFresh()` (за сессию был свежий ответ сервера); `refresh()` зовётся при открытии, ошибка — молча.
+   */
+  dailyLimit?: { isFresh(): boolean; refresh(): Promise<unknown> };
   /** Сразу начать забег (кнопка «Ещё раз» на экране рейтинга). */
   autoStart?: boolean;
   /** Подмена ввода (стенд/демо-режим): вызывается каждый шаг вместо клавиатуры и тача. */
@@ -100,6 +105,7 @@ export function mountArcadeScreen(host: HTMLElement, deps: ArcadeScreenDeps): { 
   coinsRow.append(coinIcon, coinsVal);
   const recordVal = el('div', 'ezq-arcade__record');
   const lastVal = el('div', 'ezq-arcade__last');
+  const dailyVal = el('div', 'ezq-arcade__record ezq-arcade__daily');
   profile.append(nameRow, codeRow, coinsRow, recordVal);
   const actions = el('div', 'ezq-arcade__actions');
   const playBtn = button('ezq-arcade__play', '▶ Играть', () => startRun());
@@ -147,6 +153,11 @@ export function mountArcadeScreen(host: HTMLElement, deps: ArcadeScreenDeps): { 
     copyBtn.disabled = !s.quest.verificationCode;
     coinsVal.textContent = `Заработано ${s.quest.totalCoinsEarned} из ${s.quest.maxPossibleCoins} EasyCoins`;
     recordVal.textContent = s.arcade.highScore > 0 ? `Твой рекорд: ${s.arcade.highScore} очков` : 'Рекорда пока нет — самое время!';
+    const nf = new Intl.NumberFormat('ru-RU');
+    const showDaily = !!deps.dailyLimit?.isFresh();
+    if (showDaily && !dailyVal.isConnected) profile.appendChild(dailyVal);
+    if (!showDaily) dailyVal.remove();
+    dailyVal.textContent = `Сегодня в рейтинг: ${nf.format(s.leaderboard.todayCounted)} / ${nf.format(s.leaderboard.dailyLimit)}`;
     playBtn.textContent = s.arcade.totalRunsPlayed > 0 ? '▶ Ещё раз' : '▶ Играть';
   };
 
@@ -241,6 +252,7 @@ export function mountArcadeScreen(host: HTMLElement, deps: ArcadeScreenDeps): { 
   document.addEventListener('visibilitychange', onVisibility);
   window.addEventListener('blur', onBlur);
   const offStore = store.subscribe(() => renderProfile());
+  deps.dailyLimit?.refresh().then(() => renderProfile(), () => undefined);
 
   renderProfile();
   setMode('idle');
