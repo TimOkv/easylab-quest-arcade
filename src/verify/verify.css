@@ -1,0 +1,703 @@
+/* Кабинет куратора (verify.html). Только классы .ezq-verify-*, переменные — на .ezq-verify-root. */
+
+.ezq-verify-root {
+  --ezq-verify-blue: #0068ff;
+  --ezq-verify-blue-dark: #0052cc;
+  --ezq-verify-blue-light: #9bc4ff;
+  --ezq-verify-pale: #cad6ff;
+  --ezq-verify-bg: #f3f6ff;
+  --ezq-verify-panel: #ffffff;
+  --ezq-verify-fg: #1b1b1b;
+  --ezq-verify-muted: #6a6672;
+  --ezq-verify-border: #dde5ff;
+  --ezq-verify-red: #e0103a;
+  --ezq-verify-red-bg: #ffe8ed;
+  --ezq-verify-green: #138a4f;
+  --ezq-verify-green-bg: #e3f8ec;
+  --ezq-verify-warn: #8a5a00;
+  --ezq-verify-warn-bg: #fff3d6;
+  --ezq-verify-font: "TT Norms", "TT Norms Pro", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --ezq-verify-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Roboto Mono", monospace;
+  --ezq-verify-radius: 14px;
+
+  /* Страница не трогает body: корень сам занимает окно и прокручивается. */
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  box-sizing: border-box;
+  margin: 0;
+  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+  background: var(--ezq-verify-bg);
+  color: var(--ezq-verify-fg);
+  font: 400 15px/1.45 var(--ezq-verify-font);
+  -webkit-text-size-adjust: 100%;
+}
+
+@media (prefers-color-scheme: dark) {
+  .ezq-verify-root {
+    --ezq-verify-bg: #0d1530;
+    --ezq-verify-panel: #16204a;
+    --ezq-verify-fg: #eef2ff;
+    --ezq-verify-muted: #aab4d6;
+    --ezq-verify-border: #2a3a78;
+    --ezq-verify-pale: #22306a;
+    --ezq-verify-blue-light: #3a5bb8;
+    --ezq-verify-red: #ff6b86;
+    --ezq-verify-red-bg: #3d1424;
+    --ezq-verify-green: #5fe0a0;
+    --ezq-verify-green-bg: #123a2a;
+    --ezq-verify-warn: #ffd37a;
+    --ezq-verify-warn-bg: #3a2e10;
+  }
+}
+
+.ezq-verify-app,
+.ezq-verify-panel,
+.ezq-verify-input,
+.ezq-verify-btn,
+.ezq-verify-card,
+.ezq-verify-table-wrap,
+.ezq-verify-winner {
+  box-sizing: border-box;
+}
+
+.ezq-verify-app {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 16px 48px;
+}
+
+/* ------------------------------------------------ шапка */
+
+.ezq-verify-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 0 14px;
+}
+
+.ezq-verify-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ezq-verify-logo {
+  color: var(--ezq-verify-blue);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ezq-verify-title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.15;
+  font-weight: 800;
+}
+
+.ezq-verify-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ------------------------------------------------ панели и тексты */
+
+.ezq-verify-panel {
+  background: var(--ezq-verify-panel);
+  border: 1px solid var(--ezq-verify-border);
+  border-radius: var(--ezq-verify-radius);
+  padding: 18px;
+  box-shadow: 0 6px 20px rgba(0, 60, 160, 0.06);
+}
+
+.ezq-verify-tabpanel,
+.ezq-verify-season {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ezq-verify-tabpanel[hidden],
+.ezq-verify-msg[hidden],
+.ezq-verify-error[hidden] {
+  display: none;
+}
+
+.ezq-verify-h2 {
+  margin: 0 0 6px;
+  font-size: 19px;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+.ezq-verify-h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.ezq-verify-muted {
+  margin: 0 0 12px;
+  color: var(--ezq-verify-muted);
+}
+
+.ezq-verify-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ezq-verify-updated {
+  font-size: 13px;
+  margin: 0 0 10px;
+}
+
+.ezq-verify-mono {
+  font-family: var(--ezq-verify-mono);
+  letter-spacing: 0.02em;
+}
+
+.ezq-verify-nowrap {
+  white-space: nowrap;
+}
+
+.ezq-verify-error,
+.ezq-verify-msg--error {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--ezq-verify-red-bg);
+  color: var(--ezq-verify-red);
+  font-weight: 600;
+}
+
+.ezq-verify-warn {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--ezq-verify-warn-bg);
+  color: var(--ezq-verify-warn);
+  font-weight: 600;
+}
+
+.ezq-verify-msg {
+  margin: 10px 0 0;
+}
+
+.ezq-verify-msg--ok {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--ezq-verify-green-bg);
+  color: var(--ezq-verify-green);
+  font-weight: 600;
+}
+
+.ezq-verify-msg--muted {
+  color: var(--ezq-verify-muted);
+}
+
+.ezq-verify-loading {
+  padding: 24px 0;
+  text-align: center;
+}
+
+/* ------------------------------------------------ формы и кнопки */
+
+.ezq-verify-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ezq-verify-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: end;
+  gap: 12px;
+}
+
+.ezq-verify-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ezq-verify-label {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.ezq-verify-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ezq-verify-row > .ezq-verify-input {
+  flex: 1 1 180px;
+}
+
+.ezq-verify-input {
+  min-width: 0;
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 14px;
+  border: 2px solid var(--ezq-verify-blue-light);
+  border-radius: 12px;
+  background: var(--ezq-verify-panel);
+  color: var(--ezq-verify-fg);
+  font: 500 16px/1.2 var(--ezq-verify-font);
+}
+
+.ezq-verify-input:focus {
+  outline: none;
+  border-color: var(--ezq-verify-blue);
+  box-shadow: 0 0 0 3px rgba(0, 104, 255, 0.2);
+}
+
+.ezq-verify-input--code {
+  font-family: var(--ezq-verify-mono);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ezq-verify-input--num {
+  max-width: 220px;
+}
+
+.ezq-verify-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 46px;
+  padding: 10px 18px;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: var(--ezq-verify-pale);
+  color: var(--ezq-verify-blue);
+  font: 700 15px/1.2 var(--ezq-verify-font);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background-color 0.15s, border-color 0.15s, transform 0.1s;
+}
+
+.ezq-verify-btn:active {
+  transform: translateY(1px);
+}
+
+.ezq-verify-btn:focus-visible {
+  outline: 3px solid rgba(0, 104, 255, 0.45);
+  outline-offset: 2px;
+}
+
+.ezq-verify-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.ezq-verify-btn--primary {
+  background: var(--ezq-verify-blue);
+  color: #ffffff;
+}
+
+.ezq-verify-btn--primary:hover:not(:disabled) {
+  background: var(--ezq-verify-blue-dark);
+}
+
+.ezq-verify-btn--ghost {
+  background: transparent;
+  border-color: var(--ezq-verify-blue-light);
+}
+
+.ezq-verify-btn--ghost:hover:not(:disabled) {
+  background: var(--ezq-verify-pale);
+}
+
+.ezq-verify-btn--danger {
+  background: transparent;
+  border-color: var(--ezq-verify-red);
+  color: var(--ezq-verify-red);
+}
+
+.ezq-verify-btn--danger:hover:not(:disabled) {
+  background: var(--ezq-verify-red-bg);
+}
+
+.ezq-verify-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* ------------------------------------------------ вкладки */
+
+.ezq-verify-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--ezq-verify-pale);
+  align-self: flex-start;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.ezq-verify-btn--tab {
+  min-height: 42px;
+  background: transparent;
+  color: var(--ezq-verify-fg);
+  white-space: nowrap;
+}
+
+.ezq-verify-btn--tab[aria-selected="true"] {
+  background: var(--ezq-verify-blue);
+  color: #ffffff;
+}
+
+/* ------------------------------------------------ карточка ученика */
+
+.ezq-verify-result {
+  margin-top: 14px;
+}
+
+.ezq-verify-result:empty {
+  display: none;
+}
+
+.ezq-verify-card {
+  padding: 18px;
+  border-radius: var(--ezq-verify-radius);
+  border: 2px solid var(--ezq-verify-blue);
+  background: var(--ezq-verify-panel);
+  animation: ezq-verify-pop 0.2s ease-out;
+}
+
+.ezq-verify-card--awarded {
+  border-color: var(--ezq-verify-green);
+}
+
+.ezq-verify-card-status {
+  margin: 0 0 14px;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.ezq-verify-coins {
+  color: var(--ezq-verify-blue);
+  font-size: 28px;
+}
+
+.ezq-verify-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0 0 14px;
+}
+
+.ezq-verify-fact-term {
+  color: var(--ezq-verify-muted);
+}
+
+.ezq-verify-fact-value {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.ezq-verify-dup {
+  margin: 0 0 14px;
+}
+
+.ezq-verify-awarded {
+  color: var(--ezq-verify-green);
+  font-weight: 700;
+}
+
+@keyframes ezq-verify-pop {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ------------------------------------------------ таблицы */
+
+.ezq-verify-table-wrap {
+  overflow-x: auto;
+  margin: 0 -18px;
+  padding: 0 18px;
+}
+
+.ezq-verify-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.ezq-verify-th {
+  padding: 8px 10px;
+  text-align: left;
+  color: var(--ezq-verify-muted);
+  font-weight: 600;
+  font-size: 13px;
+  border-bottom: 2px solid var(--ezq-verify-border);
+  white-space: nowrap;
+}
+
+.ezq-verify-td {
+  padding: 10px;
+  border-bottom: 1px solid var(--ezq-verify-border);
+  vertical-align: middle;
+  overflow-wrap: break-word;
+}
+
+.ezq-verify-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ezq-verify-tr--click {
+  cursor: pointer;
+}
+
+.ezq-verify-tr--click:hover,
+.ezq-verify-tr--click:focus-visible {
+  background: var(--ezq-verify-pale);
+  outline: none;
+}
+
+.ezq-verify-tr--hidden {
+  opacity: 0.6;
+}
+
+.ezq-verify-td--act {
+  text-align: right;
+}
+
+.ezq-verify-td--act .ezq-verify-btn {
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.ezq-verify-ok {
+  color: var(--ezq-verify-green);
+  font-weight: 600;
+}
+
+.ezq-verify-pending {
+  color: var(--ezq-verify-warn);
+  font-weight: 600;
+}
+
+.ezq-verify-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.ezq-verify-tag--warn {
+  background: var(--ezq-verify-warn-bg);
+  color: var(--ezq-verify-warn);
+}
+
+.ezq-verify-tag--muted {
+  background: var(--ezq-verify-pale);
+  color: var(--ezq-verify-muted);
+}
+
+/* ------------------------------------------------ сезон */
+
+.ezq-verify-season-now {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.ezq-verify-winners-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ezq-verify-winners-group .ezq-verify-muted {
+  margin: 2px 0 8px;
+  font-size: 13px;
+}
+
+.ezq-verify-winners-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ezq-verify-winner {
+  display: grid;
+  grid-template-columns: 32px 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--ezq-verify-pale);
+}
+
+.ezq-verify-winner .ezq-verify-muted {
+  margin: 0;
+}
+
+.ezq-verify-winner-medal {
+  font-size: 20px;
+}
+
+.ezq-verify-winner-score {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ezq-verify-name {
+  overflow-wrap: break-word;
+}
+
+/* ------------------------------------------------ узкие экраны (до 360px) */
+
+@media (max-width: 560px) {
+  .ezq-verify-app {
+    padding: 0 12px 32px;
+  }
+
+  .ezq-verify-title {
+    font-size: 20px;
+  }
+
+  .ezq-verify-panel {
+    padding: 14px;
+  }
+
+  .ezq-verify-table-wrap {
+    margin: 0 -14px;
+    padding: 0 14px;
+  }
+
+  .ezq-verify-col-id {
+    display: none;
+  }
+
+  .ezq-verify-row > .ezq-verify-btn,
+  .ezq-verify-tabs {
+    flex: 1 1 100%;
+  }
+
+  .ezq-verify-tabs {
+    align-self: stretch;
+  }
+
+  .ezq-verify-btn--tab {
+    flex: 1 1 0;
+    padding: 10px 8px;
+  }
+
+  .ezq-verify-card-status {
+    font-size: 18px;
+  }
+
+  .ezq-verify-facts {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .ezq-verify-fact-value {
+    margin-bottom: 8px;
+  }
+
+  .ezq-verify-winner {
+    grid-template-columns: 28px 1fr auto;
+  }
+
+  .ezq-verify-winner .ezq-verify-mono {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .ezq-verify-input--num {
+    max-width: none;
+  }
+
+  /* Рейтинг сезона на телефоне: строка-карточка, кнопка всегда на виду. */
+  .ezq-verify-board .ezq-verify-thead {
+    display: none;
+  }
+
+  .ezq-verify-board .ezq-verify-table-wrap {
+    overflow-x: visible;
+  }
+
+  .ezq-verify-board .ezq-verify-tr {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--ezq-verify-border);
+  }
+
+  .ezq-verify-board .ezq-verify-td {
+    padding: 3px 4px;
+    border-bottom: 0;
+  }
+
+  .ezq-verify-board .ezq-verify-td:nth-child(1) {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    text-align: left;
+  }
+
+  .ezq-verify-board .ezq-verify-td:nth-child(2) {
+    grid-column: 2;
+    grid-row: 1;
+    font-weight: 600;
+  }
+
+  .ezq-verify-board .ezq-verify-td:nth-child(3) {
+    grid-column: 2;
+    grid-row: 2;
+    color: var(--ezq-verify-muted);
+  }
+
+  .ezq-verify-board .ezq-verify-td:nth-child(4) {
+    grid-column: 3;
+    grid-row: 1;
+    font-weight: 700;
+  }
+
+  .ezq-verify-board .ezq-verify-td--act {
+    grid-column: 3;
+    grid-row: 2;
+  }
+}

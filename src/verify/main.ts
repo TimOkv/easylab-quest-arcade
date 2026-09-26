@@ -1,5 +1,7 @@
-// Заглушка входа кураторской страницы — наполняет таск 06.
-const root = document.getElementById('ezq-verify');
-if (root) root.textContent = 'Страница куратора появится здесь.';
+// Вход кураторской страницы verify.html.
+import './verify.css';
+import { createRestClientFromEnv } from '../services/rest';
+import { mountVerifyPage } from './page';
 
-export {};
+const root = document.getElementById('ezq-verify');
+if (root) mountVerifyPage(root, { rest: createRestClientFromEnv() });
