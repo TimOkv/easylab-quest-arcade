@@ -7,3 +7,5 @@ __pycache__/
 .DS_Store
 .autopilot/serve.*
 Easycode брендбук.pdf
+test-results/
+playwright-report/
