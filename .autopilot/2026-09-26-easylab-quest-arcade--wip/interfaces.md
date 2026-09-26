@@ -65,3 +65,15 @@ export interface CuratorSync { isConfigured: boolean; syncNow(): Promise<'synced
 
 ## Что построено (дополняется после каждого таска)
 
+### Из таска 01 — каркас
+
+- `src/core/types.ts` — все общие типы (раздел выше) + `EasyQuestGameState`, `KeyValueStorage`, `ScreenName`, `RejectReason`. Расширять можно, менять — нет.
+- `src/core/state.ts` — `createInitialState(now, sessionId)`, `loadState(storage)`, `createStore({ storage, now?, win?, newSessionId? }) → Store { get() (заморожено), update(draft => void), subscribe((s, prev, source: 'local'|'external') => void) → off, replace(s), isMemoryOnly(), destroy() }`; `SAVE_KEY`, `CORRUPT_KEY`.
+- `src/core/rules.ts` — `REWARDS`, `rewardFor`, `generateVerificationCode(randomFn?)`, `isValidVerificationCode`, `normalizeVerificationCode`, `validatePlayerName → {ok,value} | {ok:false, error:'TOO_SHORT'|'TOO_LONG'|'BAD_CHARS'|'PROFANITY', message}`, `isRunPlausible`, `MAX_POINTS_PER_SECOND`, `MIN_RUN_SECONDS`, `MAX_SCORE`, `CODE_ALPHABET`, `MAX_TOTAL_COINS`. Не пиши свои версии этих правил.
+- `src/services/sfx.ts` — `createSfx(isMuted) → { play(SfxName), unlock() }`.
+- `src/app/shell.ts` — `fitStage(el, w, h, { align?: 'center'|'top', onScale? }) → { destroy, scale(), refresh() }` (el уже вставлен в контейнер; родитель получает `.ezq-stage-host` с текстурой полей), `copyText`, `createMuteButton(store, sfx)`, `showToast(text, ms?)`, `blockGestures(root)`.
+- `src/app/app.ts` — `mountApp(rootEl) → { store, sfx, router, destroy }`; `src/app/router.ts` — `createRouter`, `resolveScreen`, `startScreen`, `ScreenFactory<Ctx> = (host, ctx) => { destroy }`.
+- Монтирование экранов: заглушки в `SCREENS` в `src/app/screens.ts` заменяет **таск 05** (проводка). Таски 03/04 экспортируют `mountQuestScreen`/`mountArcadeScreen` из своих папок и в `src/app/` не пишут. `AppContext = { root, store, sfx, navigate(screen) }` — расширяет таск 05.
+- CSS-токены на `.ezq-root`: `--ezq-blue, -blue-light, -white, -gray, -black, -lilac, -pale-blue, -cyan, -sky, -magenta, -red, -success, -navy, -navy-deep, -wood, -wood-dark, -wood-light, -gold, -silver, -bronze, -font, -font-mono, -safe-top/right/bottom/left, -bg, -panel-bg, -panel-fg, -panel-muted, -panel-border, -radius, -shadow`. Светлая тема — атрибут `[data-ezq-theme="light"]`. Готовые классы: `.ezq-btn`, `.ezq-btn--icon`, `.ezq-scroll` (единственное место, где работает прокрутка), `.ezq-screen`, `.ezq-stage`.
+- Тесты: `npm test`; один файл — `npx vitest run <path>`; CSS-линтер — `tests/css-prefix.test.ts` (сканирует все `.css` в `src/`).
+- Версии: TypeScript 7, Vite 8, Vitest 5.

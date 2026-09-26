@@ -1,0 +1,251 @@
+/* Оболочка EasyLab Quest. Только классы .ezq-*; переменные объявлены на .ezq-root. */
+
+.ezq-root {
+  /* Бренд Easycode (брендбук §3.1) */
+  --ezq-blue: #0068ff;
+  --ezq-blue-light: #9bc4ff;
+  --ezq-white: #ffffff;
+  /* Дополнительные (приблизительно, с превью брендбука) */
+  --ezq-gray: #8e8a94;
+  --ezq-black: #1b1b1b;
+  --ezq-lilac: #b8a4fc;
+  --ezq-pale-blue: #cad6ff;
+  --ezq-cyan: #54c8f4;
+  --ezq-sky: #00b8ff;
+  --ezq-magenta: #e500e6;
+  --ezq-red: #ff1f4b;
+  --ezq-success: #2bd47d;
+  /* Из референса: тёмно-синяя ночь и дерево рамок */
+  --ezq-navy: #141a3a;
+  --ezq-navy-deep: #0a0e22;
+  --ezq-wood: #7a4a2a;
+  --ezq-wood-dark: #3f2415;
+  --ezq-wood-light: #a8703f;
+  /* Призовые бейджи */
+  --ezq-gold: #ffc933;
+  --ezq-silver: #c9d3e0;
+  --ezq-bronze: #d9894a;
+  /* Шрифты */
+  --ezq-font: "TT Norms", "TT Norms Pro", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --ezq-font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Roboto Mono", monospace;
+  /* Отступы безопасной зоны */
+  --ezq-safe-top: env(safe-area-inset-top, 0px);
+  --ezq-safe-right: env(safe-area-inset-right, 0px);
+  --ezq-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --ezq-safe-left: env(safe-area-inset-left, 0px);
+  /* Тема панелей UI (по умолчанию тёмная, §10) */
+  --ezq-bg: var(--ezq-navy-deep);
+  --ezq-panel-bg: rgba(16, 22, 52, 0.94);
+  --ezq-panel-fg: var(--ezq-white);
+  --ezq-panel-muted: #aab4d4;
+  --ezq-panel-border: var(--ezq-wood);
+  --ezq-radius: 14px;
+  --ezq-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  overscroll-behavior: none;
+  /* Только гасим двойной тап-зум; скролл/пинч блокирует погашенный touchmove вне .ezq-scroll и meta viewport.
+     touch-action: none — только на canvas (ставят экраны аркады/квеста). */
+  touch-action: manipulation;
+  padding: var(--ezq-safe-top) var(--ezq-safe-right) var(--ezq-safe-bottom) var(--ezq-safe-left);
+  margin: 0;
+  background: var(--ezq-bg);
+  color: var(--ezq-panel-fg);
+  font-family: var(--ezq-font);
+  font-size: 16px;
+  line-height: 1.4;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.ezq-root[data-ezq-theme="light"] {
+  --ezq-panel-bg: rgba(248, 250, 255, 0.97);
+  --ezq-panel-fg: var(--ezq-black);
+  --ezq-panel-muted: #5b6178;
+  --ezq-panel-border: var(--ezq-blue-light);
+}
+
+.ezq-screen-host {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ezq-screen {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* ---- Сцена с contain-масштабом (fitStage) и декоративными полями ---- */
+
+.ezq-stage-host {
+  position: relative;
+  overflow: hidden;
+  background-color: #2a180f;
+  background-image:
+    radial-gradient(ellipse at center, rgba(10, 14, 34, 0) 40%, rgba(10, 14, 34, 0.75) 100%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' shape-rendering='crispEdges'%3E%3Crect width='32' height='32' fill='%23472a1a'/%3E%3Crect width='32' height='2' fill='%23211209'/%3E%3Crect y='16' width='32' height='2' fill='%23211209'/%3E%3Crect x='0' y='2' width='2' height='14' fill='%23211209'/%3E%3Crect x='16' y='18' width='2' height='14' fill='%23211209'/%3E%3Crect x='2' y='2' width='14' height='2' fill='%235a3522'/%3E%3Crect x='18' y='2' width='14' height='2' fill='%235a3522'/%3E%3Crect x='0' y='18' width='16' height='2' fill='%235a3522'/%3E%3Crect x='18' y='18' width='14' height='2' fill='%235a3522'/%3E%3Crect x='6' y='10' width='4' height='2' fill='%233a2214'/%3E%3Crect x='24' y='26' width='4' height='2' fill='%233a2214'/%3E%3C/svg%3E");
+  background-size: 100% 100%, 64px 64px;
+  image-rendering: pixelated;
+}
+
+.ezq-stage {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  overflow: hidden;
+  box-shadow: 0 0 0 4px var(--ezq-wood-dark), 0 0 40px rgba(0, 0, 0, 0.6);
+}
+
+/* ---- Базовые кнопки ---- */
+
+.ezq-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 10px 18px;
+  margin: 0;
+  border: 3px solid var(--ezq-wood-dark);
+  border-radius: 12px;
+  background: var(--ezq-blue);
+  color: var(--ezq-white);
+  font: 700 16px/1.2 var(--ezq-font);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 4px 0 var(--ezq-wood-dark);
+  transition: transform 80ms ease, box-shadow 80ms ease, filter 120ms ease;
+}
+
+.ezq-btn:hover {
+  filter: brightness(1.08);
+}
+
+.ezq-btn:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 var(--ezq-wood-dark);
+}
+
+.ezq-btn:focus-visible {
+  outline: 3px solid var(--ezq-sky);
+  outline-offset: 2px;
+}
+
+.ezq-btn:disabled {
+  cursor: default;
+  filter: grayscale(0.6) brightness(0.8);
+  transform: none;
+}
+
+.ezq-btn--icon {
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  background: var(--ezq-navy);
+  border-color: var(--ezq-wood);
+  font-size: 22px;
+}
+
+/* ---- Прокручиваемые области (жесты не гасятся внутри) ---- */
+
+.ezq-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+.ezq-offscreen {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  opacity: 0;
+}
+
+/* ---- Тосты ---- */
+
+.ezq-toast-host {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--ezq-safe-bottom) + 20px);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 32px);
+  pointer-events: none;
+}
+
+.ezq-toast {
+  box-sizing: border-box;
+  padding: 10px 16px;
+  border: 2px solid var(--ezq-blue-light);
+  border-radius: 12px;
+  background: var(--ezq-navy);
+  color: var(--ezq-white);
+  font: 600 16px/1.3 var(--ezq-font);
+  text-align: center;
+  box-shadow: var(--ezq-shadow);
+  animation: ezq-toast-in 180ms ease-out;
+}
+
+.ezq-toast--out {
+  opacity: 0;
+  transition: opacity 280ms ease;
+}
+
+@keyframes ezq-toast-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- Заглушки экранов (заменяются тасками 03/04/05) ---- */
+
+.ezq-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.ezq-placeholder__title {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--ezq-blue-light);
+}
+
+.ezq-placeholder__text {
+  color: var(--ezq-panel-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ezq-btn,
+  .ezq-toast {
+    transition: none;
+    animation: none;
+  }
+}

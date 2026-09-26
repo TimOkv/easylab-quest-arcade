@@ -11,7 +11,7 @@ window.STATE =
   "memoryFile": "CLAUDE.md",
   "skillDir": "/Users/timofejokunev/.claude/skills/autopilot",
   "startedAt": "2026-09-26T17:21:46+03:00",
-  "updatedAt": "2026-09-26T17:57:58+03:00",
+  "updatedAt": "2026-09-26T18:09:03+03:00",
   "finishedAt": null,
   "stages": [
     {
@@ -28,24 +28,34 @@ window.STATE =
     },
     {
       "id": "briefing",
-      "status": "active",
-      "startedAt": "2026-09-26T17:27:10+03:00"
+      "status": "done",
+      "startedAt": "2026-09-26T17:27:10+03:00",
+      "finishedAt": "2026-09-26T17:46:12+03:00",
+      "note": "9 вопросов (семи + интервью deep)"
     },
     {
       "id": "spec",
-      "status": "pending"
+      "status": "done",
+      "startedAt": "2026-09-26T17:46:12+03:00",
+      "finishedAt": "2026-09-26T17:55:07+03:00",
+      "note": "G2: 8 находок, дописано"
     },
     {
       "id": "plan",
-      "status": "pending"
+      "status": "done",
+      "startedAt": "2026-09-26T17:55:07+03:00",
+      "finishedAt": "2026-09-26T17:58:13+03:00",
+      "note": "7 тасков, ярус T2, 4 волны"
     },
     {
       "id": "build",
-      "status": "pending"
+      "status": "active",
+      "startedAt": "2026-09-26T17:58:13+03:00"
     },
     {
       "id": "review",
-      "status": "pending"
+      "status": "active",
+      "startedAt": "2026-09-26T18:09:03+03:00"
     },
     {
       "id": "final",
@@ -105,10 +115,15 @@ window.STATE =
         "tests/",
         ".env.example"
       ],
-      "status": "pending",
+      "status": "repair",
       "retries": 0,
-      "repairs": 0,
-      "handoffs": 0
+      "repairs": 1,
+      "handoffs": 0,
+      "startedAt": "2026-09-26T17:58:13+03:00",
+      "repairFindings": [
+        "DEFAULT_DAILY_LIMIT 60 → 3000 (G09)",
+        "touch-action:none на всём .ezq-root → только canvas"
+      ]
     },
     {
       "id": "02",
@@ -353,10 +368,23 @@ window.STATE =
     "extra": "список углублений R##.n",
     "actions": "дописаны: электроника К2, аудиосистема К4, completed_at с клиента, метки высоты, повтор подсказки = подсказка 2, замер FPS, доп. цвета бренда; RPC вместо прямого POST — оставлено осознанно (G03 + приватность), в отчёт"
   },
-  "concerns": [],
+  "concerns": [
+    "T01 tests/rules.test.ts:41 — проверка «никогда < 0» не может упасть; Math.max мёртвый",
+    "T01 src/app/router.ts:19-27 — нет тестов охраны маршрутов",
+    "T01 src/core/types.ts:141 — arcade.isUnlocked дублирует quest.isCompleted (ставит таск 03)",
+    "T01 src/core/state.ts:35 — максимумы комнат дублируют REWARDS",
+    "T01 src/core/rules.ts:54,102 — две таблицы кириллица↔латиница",
+    "T01 src/core/rules.ts:20 — HintsUsed | number сводится к number",
+    "T01 src/core/state.ts:91 — mergeInto не проверяет форму nullable-полей",
+    "T01 src/app/shell.ts:109 — подписка createMuteButton без явного destroy",
+    "T01 src/app/shell.ts:83,134 — copyText/showToast ищут .ezq-root глобально",
+    "T01 tsconfig.json:7 — types:[node] держится на транзитивном @types/node",
+    "T01 src/app/shell.ts:9 — опция align:'top' без потребителя",
+    "T01 src/services/sfx.ts:97 — play() создаёт AudioContext до жеста (должен только unlock)"
+  ],
   "reviewers": {
-    "manifestSpec": null,
-    "craft": null
+    "manifestSpec": "rev-ms",
+    "craft": "rev-craft"
   },
   "blind": null
 }

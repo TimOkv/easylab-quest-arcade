@@ -1,0 +1,23 @@
+{
+  "name": "easylab-quest-arcade",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:e2e": "playwright test --pass-with-no-tests",
+    "check:size": "node scripts/check-size.mjs",
+    "check:css": "vitest run tests/css-prefix.test.ts"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "happy-dom": "^20.14.5",
+    "playwright": "^1.63.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
+  }
+}
