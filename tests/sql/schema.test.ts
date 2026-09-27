@@ -123,6 +123,9 @@ describe('schema.sql поверх базы из §4.2 брифа (старая �
     create index if not exists idx_leaderboard_top on public.leaderboard (score desc, created_at asc);
     grant usage on schema public to anon, authenticated;
     grant all on public.quest_completions, public.leaderboard to anon, authenticated;
+    -- прохождение, записанное до обновления до 150 монет
+    insert into public.quest_completions (verification_code, player_name, student_id, coins_earned)
+      values ('EZ-WLD2', 'Старичок', 'st-old', 70);
   `;
   let old: PGlite;
 
@@ -145,6 +148,28 @@ describe('schema.sql поверх базы из §4.2 брифа (старая �
         await old.exec('RESET ROLE');
       }
     }
+  });
+
+  /** RPC на старой базе под anon. */
+  const oldRpc = async (fn: string, args: unknown[]) => {
+    const ph = args.map((_, i) => `$${i + 1}`).join(', ');
+    await old.exec('SET ROLE anon');
+    try {
+      return (await old.query<{ r: any }>(`select public.${fn}(${ph}) as r`, args)).rows[0].r;
+    } finally {
+      await old.exec('RESET ROLE');
+    }
+  };
+
+  it('до 150 монет: старая запись — coins_max 75, новая — 150; CHECK брифа (до 75) снят; повторный прогон их не трогает', async () => {
+    expect(await oldRpc('restore_by_student', ['st-old'])).toMatchObject({ verification_code: 'EZ-WLD2', coins_earned: 70, coins_max: 75 });
+    expect(await oldRpc('register_quest_completion', ['EZ-N3W2', 'Новичок', 'st-new', 150, null]))
+      .toMatchObject({ verification_code: 'EZ-N3W2', coins_earned: 150, coins_max: 150, restored: false });
+    await old.exec(SCHEMA);
+    const rows = (await old.query<any>(`select verification_code c, coins_max m from public.quest_completions order by c`)).rows;
+    expect(rows).toEqual([{ c: 'EZ-N3W2', m: 150 }, { c: 'EZ-WLD2', m: 75 }]);
+    await expect(old.query(`insert into public.quest_completions (verification_code, player_name, coins_earned) values ('EZ-B1G2', 'x', 151)`)).rejects.toThrow(/check constraint/);
+    await expect(old.query(`update public.quest_completions set coins_max = null`)).rejects.toThrow(/null/);
   });
 
   it('индекс ТОПа из брифа не занимает имя индекса новой таблицы', async () => {
@@ -188,13 +213,22 @@ describe('register_quest_completion / restore_by_student', () => {
     await expect(register('EZ-2345', 'Петя', null, 58)).resolves.toMatchObject({ verification_code: 'EZ-2345', coins_earned: 58 });
   });
 
-  it('валидация: код, ник, монеты 0..75', async () => {
+  it('монеты 0..150: граничные значения принимаются, новая запись — coins_max 150', async () => {
+    expect(await register('EZ-2345', 'Петя', 'st-150', 150)).toMatchObject({ coins_earned: 150, coins_max: 150, restored: false });
+    expect(await register('EZ-3456', 'Маша', null, 0)).toMatchObject({ coins_earned: 0, coins_max: 150 });
+    expect(await register('EZ-9999', 'Петя', 'st-150', 90)).toMatchObject({ verification_code: 'EZ-2345', coins_earned: 150, coins_max: 150, restored: true });
+    expect(await rpc('restore_by_student', ['st-150'])).toMatchObject({ verification_code: 'EZ-2345', coins_max: 150 });
+    const row = (await db.query<any>(`select coins_max from public.quest_completions where verification_code='EZ-2345'`)).rows[0];
+    expect(row.coins_max).toBe(150);
+  });
+
+  it('валидация: код, ник, монеты 0..150', async () => {
     await expect(register('EZ-1111')).rejects.toThrow(/^BAD_CODE/); // 1 нет в алфавите
     await expect(register('EZ-2345', 'x')).rejects.toThrow(/^BAD_NAME/);
     await expect(register('EZ-2345', '<b>hi</b>')).rejects.toThrow(/^BAD_NAME/);
     await expect(register('EZ-2345', 'Сука123')).rejects.toThrow(/^BAD_NAME/);
     await expect(register('EZ-2345', 'fUcK_boy')).rejects.toThrow(/^BAD_NAME/);
-    await expect(register('EZ-2345', 'Аня', null, 76)).rejects.toThrow(/^BAD_COINS/);
+    await expect(register('EZ-2345', 'Аня', null, 151)).rejects.toThrow(/^BAD_COINS/);
     await expect(register('EZ-2345', 'Аня', null, -1)).rejects.toThrow(/^BAD_COINS/);
   });
 
@@ -430,7 +464,7 @@ describe('curator_*', () => {
   it('find / set_awarded / recent и флаг «возможный дубль»', async () => {
     await register('EZ-AAAA', 'Аня', null, 60);
     await register('EZ-BBBB', 'Петя', 'st-p', 70);
-    expect(await rpc('curator_find', [SECRET, 'ez-bbbb'])).toMatchObject({ verification_code: 'EZ-BBBB', coins_earned: 70, is_awarded: false, possible_duplicate: false });
+    expect(await rpc('curator_find', [SECRET, 'ez-bbbb'])).toMatchObject({ verification_code: 'EZ-BBBB', coins_earned: 70, coins_max: 150, is_awarded: false, possible_duplicate: false });
     await register('EZ-CCCC', ' аня ', null, 75); // тот же ник гостем
     expect(await rpc('curator_find', [SECRET, 'EZ-AAAA'])).toMatchObject({ possible_duplicate: true });
     const awarded = await rpc('curator_set_awarded', [SECRET, 'EZ-BBBB', true]);
@@ -438,6 +472,7 @@ describe('curator_*', () => {
     expect(awarded.awarded_at).not.toBeNull();
     const recent = await rpc<any[]>('curator_recent', [SECRET, 500]);
     expect(recent.map((r) => r.verification_code).sort()).toEqual(['EZ-AAAA', 'EZ-BBBB', 'EZ-CCCC']);
+    expect(recent.every((r) => r.coins_max === 150)).toBe(true);
     expect(await rpc('curator_find', [SECRET, 'EZ-ZZZZ'])).toBeNull();
   });
 

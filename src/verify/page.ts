@@ -24,11 +24,18 @@ export interface CompletionCard {
   player_name: string;
   student_id: string | null;
   coins_earned: number;
+  /** Максимум, из которого считались монеты: 75 у прохождений до обновления, 150 после. Нет у сервера до обновления schema.sql. */
+  coins_max?: number;
   rooms_solved: number;
   completed_at: string;
   is_awarded: boolean;
   awarded_at: string | null;
   possible_duplicate: boolean;
+}
+
+/** «58 из 150»; без `coins_max` (сервер не обновлён) — только число. */
+function coinsText(c: CompletionCard): string {
+  return typeof c.coins_max === 'number' ? `${c.coins_earned} из ${c.coins_max}` : String(c.coins_earned);
 }
 
 /** Понятный текст ошибки для куратора. */
@@ -282,7 +289,7 @@ export function mountVerifyPage(root: HTMLElement, deps: VerifyPageDeps): Verify
         h('td', 'ezq-verify-td ezq-verify-mono ezq-verify-nowrap', c.verification_code),
         name,
         h('td', 'ezq-verify-td ezq-verify-col-id ezq-verify-mono', c.student_id ?? '—'),
-        h('td', 'ezq-verify-td ezq-verify-num', c.coins_earned),
+        h('td', 'ezq-verify-td ezq-verify-num ezq-verify-nowrap', coinsText(c)),
         h(
           'td',
           `ezq-verify-td ezq-verify-nowrap ${c.is_awarded ? 'ezq-verify-ok' : 'ezq-verify-pending'}`,
@@ -415,7 +422,7 @@ export function mountVerifyPage(root: HTMLElement, deps: VerifyPageDeps): Verify
   function buildCard(c: CompletionCard): HTMLElement {
     const el = h('article', `ezq-verify-card${c.is_awarded ? ' ezq-verify-card--awarded' : ''}`);
     const status = h('p', 'ezq-verify-card-status');
-    status.append('🟢 Квест пройден. Заработано: ', h('strong', 'ezq-verify-coins', c.coins_earned), ' EasyCoins');
+    status.append('🟢 Квест пройден. Заработано: ', h('strong', 'ezq-verify-coins', coinsText(c)), ' EasyCoins');
     el.append(status);
 
     const dl = h('dl', 'ezq-verify-facts');

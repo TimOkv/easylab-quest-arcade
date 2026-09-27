@@ -11,6 +11,7 @@ const card = (over: Record<string, unknown> = {}) => ({
   player_name: 'Аня',
   student_id: 'st-7',
   coins_earned: 58,
+  coins_max: 150,
   rooms_solved: 4,
   completed_at: '2026-09-26T09:05:00+00:00', // 12:05 МСК
   is_awarded: false,
@@ -96,7 +97,7 @@ describe('verify.html — поиск и отметка начисления', ()
     await vi.waitFor(() => expect($(root, '.ezq-verify-card')).not.toBeNull());
     expect(srv.rpcCalls('curator_find').at(-1)?.args).toEqual({ p_secret: SECRET, p_code: 'EZ-AB2C' });
     const c = $(root, '.ezq-verify-card')!;
-    expect(text(c)).toContain('Квест пройден. Заработано: 58 EasyCoins');
+    expect(text(c)).toContain('Квест пройден. Заработано: 58 из 150 EasyCoins');
     expect(text(c)).toContain('Аня');
     expect(text(c)).toContain('st-7');
     expect(text(c)).toContain('26.09.2026 12:05');
@@ -125,6 +126,15 @@ describe('verify.html — поиск и отметка начисления', ()
     await vi.waitFor(() => expect(text($(root, '.ezq-verify-result')!)).toContain('EZ-8492'));
     expect(srv.rpcCalls('curator_find').length).toBe(before);
   });
+
+  it('сервер без coins_max (schema.sql не перезапущена) → монеты без «из», без выдуманного максимума', async () => {
+    const { coins_max: _, ...legacy } = card();
+    const { root } = mount(`#k=${SECRET}`, server({ curator_find: () => ({ body: legacy }) }));
+    await search(root, 'EZ-AB2C');
+    await vi.waitFor(() => expect($(root, '.ezq-verify-card')).not.toBeNull());
+    expect(text($(root, '.ezq-verify-card')!)).toContain('Заработано: 58 EasyCoins');
+    expect(text($(root, '.ezq-verify-card')!)).not.toContain(' из ');
+  });
 });
 
 describe('verify.html — поток последних прохождений', () => {
@@ -134,7 +144,7 @@ describe('verify.html — поток последних прохождений',
       curator_recent: (a) => {
         if (down) return { networkDown: true };
         expect(a.p_limit).toBe(50);
-        return { body: [card(), card({ verification_code: 'EZ-CD3F', player_name: 'Боря', coins_earned: 41, possible_duplicate: true })] };
+        return { body: [card(), card({ verification_code: 'EZ-CD3F', player_name: 'Боря', coins_earned: 41, coins_max: 75, possible_duplicate: true })] };
       },
     });
     window.location.hash = `#k=${SECRET}`;
@@ -147,6 +157,8 @@ describe('verify.html — поток последних прохождений',
     await vi.waitFor(() => expect(rows().length).toBe(2));
     expect(text($(root, '.ezq-verify-recent')!)).toContain('Обновлено');
     expect(text(rows()[1] as HTMLElement)).toContain('возможный дубль');
+    expect(text(rows()[0] as HTMLElement)).toContain('58 из 150');
+    expect(text(rows()[1] as HTMLElement)).toContain('41 из 75'); // прохождение до обновления до 150
     await vi.waitFor(() => expect(srv.rpcCalls('curator_recent').length).toBeGreaterThanOrEqual(3));
 
     // Скрытая вкладка — пауза.
@@ -166,7 +178,7 @@ describe('verify.html — поток последних прохождений',
 
     (rows()[1] as HTMLElement).click();
     await vi.waitFor(() => expect(text($(root, '.ezq-verify-card')!)).toContain('EZ-CD3F'));
-    expect(text($(root, '.ezq-verify-card')!)).toContain('Заработано: 41 EasyCoins');
+    expect(text($(root, '.ezq-verify-card')!)).toContain('Заработано: 41 из 75 EasyCoins');
   });
 });
 

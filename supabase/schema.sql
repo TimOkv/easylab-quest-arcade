@@ -1,6 +1,7 @@
 -- =============================================================================
 -- EasyLab Quest & Endless Arcade — схема Supabase (PostgreSQL 15+).
 -- Разворачивается одним прогоном в SQL Editor; повторный прогон безопасен.
+-- Обновление уже работающей базы (например, до 150 монет) — тот же повторный прогон целиком.
 --
 -- После первого прогона (один раз, в SQL Editor под postgres):
 --   select public.ezq_set_curator_secret('придумайте-длинный-секрет');
@@ -75,12 +76,36 @@ create table if not exists public.quest_completions (
   verification_code varchar(10) not null unique,
   player_name       varchar(32) not null,
   student_id        text null,
-  coins_earned      integer not null check (coins_earned >= 0 and coins_earned <= 75),
+  coins_earned      integer not null,  -- 0..150: ограничение quest_completions_coins_range ниже
+  coins_max         integer not null default 150,  -- максимум, из которого считались монеты: 75 до обновления, 150 после
   rooms_solved      integer not null default 4,
   completed_at      timestamptz default now(),
   is_awarded        boolean default false,
   awarded_at        timestamptz null
 );
+-- Обновление до 150 монет (8 загадок) на уже работающей базе — повторный прогон безопасен.
+-- Колонка coins_max: у записей, созданных до обновления, — 75; дальше NOT NULL, по умолчанию 150.
+-- CHECK монет пересоздаётся по имени; старый (из брифа, авто-имя …_coins_earned_check) снимается.
+do $$
+declare c text;
+begin
+  if not exists (select 1 from information_schema.columns
+                 where table_schema = 'public' and table_name = 'quest_completions' and column_name = 'coins_max') then
+    alter table public.quest_completions add column coins_max integer;
+    update public.quest_completions set coins_max = 75;
+  end if;
+  alter table public.quest_completions alter column coins_max set default 150;
+  alter table public.quest_completions alter column coins_max set not null;
+  for c in select conname from pg_constraint
+           where conrelid = 'public.quest_completions'::regclass and contype = 'c'
+             and pg_get_constraintdef(oid) like '%coins_earned%'
+  loop
+    execute format('alter table public.quest_completions drop constraint %I', c);
+  end loop;
+  alter table public.quest_completions add constraint quest_completions_coins_range
+    check (coins_earned >= 0 and coins_earned <= 150);
+end $$;
+
 create index if not exists idx_quest_verification on public.quest_completions (verification_code);
 create index if not exists idx_quest_student on public.quest_completions (student_id);
 create index if not exists idx_quest_name on public.quest_completions (lower(player_name));
@@ -361,6 +386,7 @@ returns jsonb language sql stable security definer set search_path = public, pg_
     'player_name', q.player_name,
     'student_id', q.student_id,
     'coins_earned', q.coins_earned,
+    'coins_max', q.coins_max,
     'rooms_solved', q.rooms_solved,
     'completed_at', q.completed_at,
     'is_awarded', q.is_awarded,
@@ -418,13 +444,13 @@ declare
 begin
   if not public.ezq_is_code(p_code) then perform public.ezq_fail('BAD_CODE'); end if;
   if public.ezq_name_error(v_name) is not null then perform public.ezq_fail('BAD_NAME', public.ezq_name_error(v_name)); end if;
-  if p_coins is null or p_coins < 0 or p_coins > 75 then perform public.ezq_fail('BAD_COINS'); end if;
+  if p_coins is null or p_coins < 0 or p_coins > 150 then perform public.ezq_fail('BAD_COINS'); end if;
 
   if v_student is not null then
     q := public.ezq_find_by_student(v_student);
     if q.id is not null then
       return jsonb_build_object('verification_code', q.verification_code, 'coins_earned', q.coins_earned,
-        'completed_at', q.completed_at, 'player_name', q.player_name, 'restored', true);
+        'coins_max', q.coins_max, 'completed_at', q.completed_at, 'player_name', q.player_name, 'restored', true);
     end if;
   end if;
 
@@ -433,7 +459,7 @@ begin
   if found and lower(q.player_name) = lower(v_name) and q.coins_earned = p_coins
      and q.student_id is not distinct from v_student then
     return jsonb_build_object('verification_code', q.verification_code, 'coins_earned', q.coins_earned,
-      'completed_at', q.completed_at, 'player_name', q.player_name, 'restored', false);
+      'coins_max', q.coins_max, 'completed_at', q.completed_at, 'player_name', q.player_name, 'restored', false);
   end if;
 
   if v_at is null or v_at < now() - interval '30 days' or v_at > now() + interval '5 minutes' then
@@ -441,11 +467,12 @@ begin
   end if;
   for attempt in 1..64 loop
     begin
-      insert into public.quest_completions (verification_code, player_name, student_id, coins_earned, rooms_solved, completed_at, is_awarded)
-        values (v_code, v_name, v_student, p_coins, 4, v_at, false)
+      -- Все новые прохождения считаются из 150 (8 загадок); сигнатура RPC не меняется.
+      insert into public.quest_completions (verification_code, player_name, student_id, coins_earned, coins_max, rooms_solved, completed_at, is_awarded)
+        values (v_code, v_name, v_student, p_coins, 150, 4, v_at, false)
         returning * into q;
       return jsonb_build_object('verification_code', q.verification_code, 'coins_earned', q.coins_earned,
-        'completed_at', q.completed_at, 'player_name', q.player_name, 'restored', false);
+        'coins_max', q.coins_max, 'completed_at', q.completed_at, 'player_name', q.player_name, 'restored', false);
     exception when unique_violation then
       -- Присланный код занят чужой записью: замена выдаёт, что он существует, — стоит как промах.
       -- Исчерпавшему лимит источнику — RATE_LIMIT без записи (клиент повторит позже).
@@ -470,7 +497,7 @@ begin
   q := public.ezq_find_by_student(v_student);
   if q.id is null then return null; end if;
   return jsonb_build_object('verification_code', q.verification_code, 'coins_earned', q.coins_earned,
-                            'player_name', q.player_name, 'completed_at', q.completed_at);
+                            'coins_max', q.coins_max, 'player_name', q.player_name, 'completed_at', q.completed_at);
 end $$;
 
 create or replace function public.submit_arcade_score(
@@ -764,6 +791,7 @@ begin
         'player_name', new.player_name,
         'student_id', coalesce(new.student_id, ''),
         'coins_earned', new.coins_earned,
+        'coins_max', new.coins_max,
         'status', case when new.is_awarded then 'Начислено' else 'Ожидает начисления' end)),
     headers := '{"Content-Type": "application/json"}'::jsonb);
   return new;

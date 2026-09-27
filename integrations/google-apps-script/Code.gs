@@ -5,6 +5,8 @@
  * «начислено». Скрипт добавляет строку или меняет «Статус» у строки с этим кодом.
  *
  * Столбцы: Время | Код EZ-XXXX | Имя ученика | ID | Заработано коинов | Статус
+ * «Заработано коинов» пишется как «N из M»: M — максимум, из которого считались монеты
+ * (75 у прохождений до обновления до 150, 150 — у новых). База без coins_max — просто N.
  *
  * Установка — пошагово в docs/GOOGLE_SHEETS.md. Коротко:
  *   1. Таблица → Расширения → Apps Script → заменить всё содержимое этим файлом.
@@ -15,7 +17,7 @@
  * Что приходит от базы (триггер ezq_notify_sheets в supabase/schema.sql):
  *   { "secret": "...", "event": "insert" | "awarded",
  *     "row": { "time": "ДД.ММ.ГГГГ ЧЧ:ММ", "verification_code": "EZ-8492", "player_name": "Аня",
- *              "student_id": "", "coins_earned": 58, "status": "Ожидает начисления" | "Начислено" } }
+ *              "student_id": "", "coins_earned": 58, "coins_max": 150, "status": "Ожидает начисления" | "Начислено" } }
  */
 
 var SHEET_NAME = 'Прохождения';
@@ -54,7 +56,7 @@ function doPost(e) {
       text(code),
       text(row.player_name),
       text(row.student_id),
-      Number(row.coins_earned) || 0,
+      coinsText(row),
       text(row.status || 'Ожидает начисления'),
     ]);
     return reply({ ok: true, inserted: true });
@@ -78,7 +80,7 @@ function ezqSelfTest() {
       contents: JSON.stringify({
         secret: secret,
         event: 'insert',
-        row: { time: now, verification_code: 'EZ-TEST', player_name: 'Проверка', student_id: '', coins_earned: 75, status: 'Ожидает начисления' },
+        row: { time: now, verification_code: 'EZ-TEST', player_name: 'Проверка', student_id: '', coins_earned: 150, coins_max: 150, status: 'Ожидает начисления' },
       }),
     },
   });
@@ -105,6 +107,13 @@ function findRow(sheet, code) {
     if (String(codes[i][0]).trim().toUpperCase() === code) return i + 2;
   }
   return -1;
+}
+
+/** «58 из 150»; если база ещё не присылает coins_max — просто число. */
+function coinsText(row) {
+  var earned = Number(row.coins_earned) || 0;
+  var max = Number(row.coins_max);
+  return max > 0 ? earned + ' из ' + max : earned;
 }
 
 /** Строка как текст: всё, что похоже на формулу (=, +, -, @), таблица не выполнит. */
