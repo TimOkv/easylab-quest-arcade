@@ -1,0 +1,155 @@
+import { describe, expect, it } from 'vitest';
+import { buildGrid, findPath, isWalkable } from '../src/quest/world/walk';
+import type { Pt, Rect } from '../src/quest/world/rooms';
+
+const R = (x1: number, y1: number, x2: number, y2: number): Rect => ({ x: x1, y: y1, w: x2 - x1, h: y2 - y1 });
+
+/** Отрезок a→b не заходит в прямоугольник (проверка с шагом 2 px). */
+function segmentHits(a: Pt, b: Pt, r: Rect): boolean {
+  const n = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 2) || 1;
+  for (let i = 0; i <= n; i++) {
+    const x = a.x + ((b.x - a.x) * i) / n;
+    const y = a.y + ((b.y - a.y) * i) / n;
+    if (x > r.x && x < r.x + r.w && y > r.y && y < r.y + r.h) return true;
+  }
+  return false;
+}
+
+// Комната 400×300 со стеной посередине: проход только снизу (y > 240).
+const WALL = R(190, 0, 210, 240);
+const TOY = { floor: [R(0, 0, 400, 300)], obstacles: [WALL] };
+
+describe('walk: сетка и путь', () => {
+  it('путь в обход стены: доходит до цели и нигде не пересекает препятствие', () => {
+    const grid = buildGrid(TOY);
+    const from = { x: 50, y: 50 };
+    const to = { x: 350, y: 50 };
+    const path = findPath(grid, from, to);
+    expect(path.length).toBeGreaterThan(1);
+    expect(path[path.length - 1]).toEqual(to);
+    let prev = from;
+    for (const p of path) {
+      expect(isWalkable(grid, p)).toBe(true);
+      expect(segmentHits(prev, p, WALL)).toBe(false);
+      prev = p;
+    }
+  });
+});
+
+import { ROOMS_DEF } from '../src/quest/world/rooms';
+import { createWalker, nearestWalkable } from '../src/quest/world/walk';
+import { createFixedClock, advanceClock } from '../src/core/clock';
+import { PUZZLES_BY_ROOM, type RoomIndex } from '../src/core/types';
+
+const ROOMS: RoomIndex[] = [1, 2, 3, 4];
+const inside = (pt: Pt, r: Rect) => pt.x > r.x && pt.x < r.x + r.w && pt.y > r.y && pt.y < r.y + r.h;
+
+describe('ROOMS_DEF: разметка комнат', () => {
+  it.each(ROOMS)('комната %i: по 2 загадки своей комнаты и 2 декоративных предмета', (room) => {
+    const def = ROOMS_DEF[room];
+    const puzzles = def.objects.filter((o) => o.puzzleId).map((o) => o.puzzleId).sort();
+    expect(puzzles).toEqual([...PUZZLES_BY_ROOM[room]].sort());
+    expect(def.objects.filter((o) => o.decor).length).toBe(2);
+  });
+
+  it('бренд: экраны компьютеров в спальне и библиотеке, магнит на холодильнике, постер на чердаке', () => {
+    const brands = ROOMS.flatMap((room) => ROOMS_DEF[room].objects.filter((o) => o.brand).map((o) => `${room}:${o.puzzleId ?? o.id}:${o.brand}`));
+    expect(brands.sort()).toEqual(['1:var_types:screen', '2:if_fridge:magnet', '3:while_pc:screen', '4:poster:poster']);
+  });
+
+  it('двери: спальня без входа, чердак без выхода, остальные с обоими', () => {
+    expect(ROOMS_DEF[1].door.entry).toBeNull();
+    expect(ROOMS_DEF[4].door.exit).toBeNull();
+    for (const room of [1, 2, 3] as const) expect(ROOMS_DEF[room].door.exit).not.toBeNull();
+    for (const room of [2, 3, 4] as const) expect(ROOMS_DEF[room].door.entry).not.toBeNull();
+  });
+
+  it.each(ROOMS)('комната %i: от точки появления есть путь к каждому предмету и к двери, мимо мебели', (room) => {
+    const def = ROOMS_DEF[room];
+    const grid = buildGrid(def);
+    const targets = def.objects.filter((o) => o.radius > 0).map((o) => ({ name: o.id, pt: o.approach }));
+    if (def.door.exit) targets.push({ name: 'door', pt: def.door.exit.approach });
+    expect(isWalkable(grid, def.spawn)).toBe(true);
+    for (const t of targets) {
+      expect(isWalkable(grid, t.pt), `${t.name}: точка подхода на полу`).toBe(true);
+      const path = findPath(grid, def.spawn, t.pt);
+      expect(path.at(-1), `${t.name}: путь дошёл`).toEqual(t.pt);
+      let prev = def.spawn;
+      for (const q of path) {
+        for (const o of def.obstacles) expect(segmentHits(prev, q, o), `${t.name}: путь через мебель`).toBe(false);
+        prev = q;
+      }
+    }
+  });
+
+  it.each(ROOMS)('комната %i: зоны подхода к загадкам и двери не пересекаются', (room) => {
+    const def = ROOMS_DEF[room];
+    const zones = def.objects.filter((o) => o.puzzleId).map((o) => ({ c: o.approach, r: o.radius }));
+    if (def.door.exit) zones.push({ c: def.door.exit.approach, r: def.door.exit.radius });
+    for (let i = 0; i < zones.length; i++)
+      for (let j = i + 1; j < zones.length; j++)
+        expect(Math.hypot(zones[i].c.x - zones[j].c.x, zones[i].c.y - zones[j].c.y)).toBeGreaterThan(zones[i].r + zones[j].r);
+  });
+
+  it.each(ROOMS)('комната %i: тап в мебель ведёт в ближайшую проходимую точку, и туда можно дойти', (room) => {
+    const def = ROOMS_DEF[room];
+    const grid = buildGrid(def);
+    for (const o of def.obstacles) {
+      const tap = { x: o.x + o.w / 2, y: o.y + o.h / 2 };
+      const near = nearestWalkable(grid, tap)!;
+      expect(isWalkable(grid, near)).toBe(true);
+      for (const ob of def.obstacles) expect(inside(near, ob)).toBe(false);
+      const path = findPath(grid, def.spawn, tap);
+      if (path.length) expect(isWalkable(grid, path.at(-1)!)).toBe(true);
+    }
+  });
+});
+
+describe('walk: герой', () => {
+  const grid = buildGrid(TOY);
+
+  it('скорость не зависит от частоты кадров: за 1 с на 30/60/120/144 Гц — одно и то же место', () => {
+    const run = (hz: number) => {
+      const w = createWalker(grid, { x: 20, y: 270 });
+      w.setPath([{ x: 390, y: 270 }]);
+      const clock = createFixedClock();
+      for (let t = 0; t < 1000 - 1e-6; t += 1000 / hz) {
+        const n = advanceClock(clock, 1000 / hz);
+        for (let i = 0; i < n; i++) w.step(1 / 60);
+      }
+      return w.pos.x;
+    };
+    const x60 = run(60);
+    expect(x60).toBeCloseTo(20 + 260, 0); // ≈ 260 px/с
+    for (const hz of [30, 120, 144]) expect(Math.abs(run(hz) - x60)).toBeLessThanOrEqual(260 / 60 + 1e-6);
+  });
+
+  it('ручной ввод не проходит сквозь стену и скользит вдоль неё', () => {
+    const w = createWalker(grid, { x: 150, y: 100 });
+    w.setInput({ x: 1, y: 0 });
+    for (let i = 0; i < 180; i++) w.step(1 / 60);
+    expect(w.pos.x).toBeLessThan(WALL.x);
+    expect(w.dir).toBe('right');
+    const y0 = w.pos.y;
+    w.setInput({ x: 1, y: 1 }); // по диагонали в стену — съезжает вниз вдоль неё
+    for (let i = 0; i < 20; i++) w.step(1 / 60);
+    expect(w.pos.x).toBeLessThan(WALL.x);
+    expect(w.pos.y).toBeGreaterThan(y0 + 20);
+  });
+
+  it('клавиша во время пути отменяет путь; отпустил — стоит', () => {
+    const w = createWalker(grid, { x: 50, y: 270 });
+    w.setPath(findPath(grid, w.pos, { x: 350, y: 50 }));
+    w.step(1 / 60);
+    expect(w.moving).toBe(true);
+    w.setInput({ x: 0, y: -1 });
+    expect(w.path.length).toBe(0);
+    w.step(1 / 60);
+    expect(w.dir).toBe('up');
+    w.setInput({ x: 0, y: 0 });
+    const at = { ...w.pos };
+    w.step(1 / 60);
+    expect(w.moving).toBe(false);
+    expect(w.pos).toEqual(at);
+  });
+});

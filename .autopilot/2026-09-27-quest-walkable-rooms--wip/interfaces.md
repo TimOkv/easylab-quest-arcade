@@ -78,3 +78,13 @@ export const PUZZLES_BY_ROOM: Record<RoomIndex, readonly [PuzzleId, PuzzleId]>;
 - `AppContext.music: Music`; первый жест в корне приложения разблокирует sfx и музыку.
 - Аркада: `duck(false)` + `play('arcade')`; рейтинг: `duck(true)` + `play('arcade')`.
 - **Для таска 05:** экран квеста зовёт `ctx.music.duck(false)` + `play('quest')`, при открытой панели загадки — `duck(true)`; кнопку 🎵 ставит в HUD квеста сам.
+
+### Из таска 04 — мир: комнаты, ходьба, спрайт Изика, логотип
+
+- Ассеты: `src/assets/rooms/{bedroom,kitchen,library,attic}.webp` (готовит `scripts/prep-rooms.py`; исходники JPG — `src/assets/rooms/src/`, в бандл не импортируются). `room.jpg` пока импортирует `quest/scene.ts` — убирает таск 05. Углы чердака (бывшие кнопки на картинке) — тёмная заливка, её закрывает HUD.
+- `quest/world/rooms`: `ROOMS_DEF: Record<RoomIndex, RoomDef>`; типы `Pt {x,y}`, `Rect {x,y,w,h}`, `Dir 'down'|'up'|'left'|'right'`, `RoomKey`, `DecorSfx 'note'|'click'|'ding'|'noteUp'|'purr'`, `BrandKind`. `RoomObject` сверх исходного — `brandRect?: Rect` (куда рисовать логотип). `DoorDef { exit: { rect, approach, radius, walkTo, dir } | null; entry: { from, dir } | null }`. Координаты — пиксели сцены 1600×900.
+- `quest/world/walk`: `CELL=20`, `WALK_SPEED=260`, `PAD_X=16`, `PAD_Y=6`; `buildGrid(def, cell?)`, `isWalkable(grid, pt)`, `nearestWalkable(grid, pt) → Pt|null`, `findPath(grid, from, to) → Pt[]`, `createWalker(grid, spawn, {speed?}) → { pos, dir, moving, path, setPath, setInput(vec), step(dt), place(p, dir?) }`; ручной вектор отменяет путь.
+- `quest/world/cat-sprite`: `createCatSprite() → { draw(ctx, x, y, dir: Dir, state: 'idle'|'walk', t /*сек*/) }`, (x, y) — точка между лапами на полу; `CAT_W=78`, `CAT_H=84`, `CAT_SCALE=3`, тайминги `WALK_FRAME_S`, `BREATH_S`, `BLINK_EVERY_S`, `BLINK_S`.
+- `quest/world/brand`: `easycodeLogoSvg(variant: BrandKind): string` (статичный SVG на 100% контейнера), `EASYCODE_BLUE`, `EASYCODE_LIGHT`.
+- `core/clock`: `STEP_MS`, `MAX_STEPS_PER_FRAME`, `FixedClock`, `createFixedClock(stepMs?)`, `advanceClock(clock, frameMs)`, `clockAlpha(clock)`; `arcade/clock` реэкспортирует под старыми именами.
+- Стенд (только dev, не в сборке): `tests/e2e/world-harness.html?view=sprite` — лист кадров и логотипы; `?view=room&n=1..4` — фон с наложенной разметкой.

@@ -8,7 +8,7 @@ export const VIEW_W = 450;
 export const VIEW_H = 800;
 /** Фиксированный шаг физики: 1/60 с (16.6 мс). */
 export const STEP_S = 1 / 60;
-export const STEP_MS = 1000 / 60;
+export { STEP_MS } from '../core/clock';
 
 export const GRAVITY = 2200; // px/с²
 export const JUMP_V = 950; // px/с → высота прыжка ≈ 205 px

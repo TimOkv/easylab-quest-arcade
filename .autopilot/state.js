@@ -11,7 +11,7 @@ window.STATE =
   "memoryFile": "CLAUDE.md",
   "skillDir": "/Users/timofejokunev/.claude/skills/autopilot",
   "startedAt": "2026-09-27T14:38:15+03:00",
-  "updatedAt": "2026-09-27T18:08:30+03:00",
+  "updatedAt": "2026-09-27T18:58:00+03:00",
   "finishedAt": null,
   "stages": [
     {
@@ -51,13 +51,13 @@ window.STATE =
       "id": "build",
       "status": "active",
       "startedAt": "2026-09-27T16:19:40+03:00",
-      "note": "1 из 6 тасков готов"
+      "note": "3 из 6 тасков готовы"
     },
     {
       "id": "review",
       "status": "active",
       "startedAt": "2026-09-27T16:23:30+03:00",
-      "note": "проверено 1 из 6"
+      "note": "проверено 3 из 6"
     },
     {
       "id": "final",
@@ -66,8 +66,8 @@ window.STATE =
   ],
   "requirements": {
     "total": 31,
-    "done": 0,
-    "inTicket": 31,
+    "done": 7,
+    "inTicket": 24,
     "inSpec": 0,
     "placeholder": 0,
     "deferred": 0,
@@ -100,11 +100,31 @@ window.STATE =
         "src/services/curator.ts",
         "src/services/bridge.ts"
       ],
-      "status": "review",
+      "status": "done",
       "retries": 0,
       "repairs": 0,
       "handoffs": 0,
-      "startedAt": "2026-09-27T16:19:53+03:00"
+      "startedAt": "2026-09-27T16:19:53+03:00",
+      "finishedAt": "2026-09-27T18:14:00+03:00",
+      "commit": "b7a261b",
+      "tests": {
+        "passed": 288,
+        "failed": 0
+      },
+      "files": [
+        "src/core/types.ts",
+        "src/core/state.ts",
+        "src/core/rules.ts",
+        "src/quest/puzzles.ts",
+        "src/quest/puzzle-ui.ts",
+        "src/quest/controller.ts",
+        "src/quest/screen.ts",
+        "src/quest/quest.css",
+        "src/app/app.ts",
+        "src/services/curator.ts",
+        "src/services/bridge.ts",
+        "src/arcade/screen.ts"
+      ]
     },
     {
       "id": "02",
@@ -162,10 +182,28 @@ window.STATE =
         "src/arcade/screen.ts",
         "src/leaderboard/"
       ],
-      "status": "pending",
+      "status": "done",
       "retries": 0,
       "repairs": 0,
-      "handoffs": 0
+      "handoffs": 0,
+      "startedAt": "2026-09-27T18:14:00+03:00",
+      "finishedAt": "2026-09-27T18:31:00+03:00",
+      "commit": "2c74f2a",
+      "tests": {
+        "passed": 298,
+        "failed": 0
+      },
+      "files": [
+        "src/services/music.ts",
+        "src/services/sfx.ts",
+        "src/app/shell.ts",
+        "src/app/screens.ts",
+        "src/app/app.ts",
+        "src/arcade/screen.ts",
+        "src/leaderboard/screen.ts",
+        "tests/music.test.ts",
+        "tests/sfx.test.ts"
+      ]
     },
     {
       "id": "04",
@@ -192,10 +230,11 @@ window.STATE =
         "src/quest/world/",
         "src/core/clock.ts"
       ],
-      "status": "pending",
+      "status": "review",
       "retries": 0,
       "repairs": 0,
-      "handoffs": 0
+      "handoffs": 1,
+      "startedAt": "2026-09-27T18:14:00+03:00"
     },
     {
       "id": "05",
@@ -276,7 +315,18 @@ window.STATE =
     "T02 supabase/schema.sql — максимум 150 записан 4 раза (DEFAULT, INSERT, CHECK, guard)",
     "T02 supabase/schema.sql — цикл снятия CHECK по like %coins_earned% снимет и будущие ограничения",
     "T02 Code.gs:112 — столбец монет: числа в старых строках, текст «N из M» в новых — сумма/сортировка в таблице ломается",
-    "T02 тесты — payload вебхука с coins_max ничем не проверен (в PGlite нет pg_net)"
+    "T02 тесты — payload вебхука с coins_max ничем не проверен (в PGlite нет pg_net)",
+    "T01 src/app/app.ts:71 — puzzles в payload моста выбираются по maxPossibleCoins===150: восстановленное с сервера прохождение отдаст 8 нулевых записей при ненулевых coinsEarned",
+    "T01 tests/quest-puzzles.test.ts:229 — тест «Мурзика больше нет» не мог покраснеть (смотрит не туда, где был Мурзик)",
+    "T01 src/quest/puzzles.ts — дубли: разбор вызова функции (checkPlay/checkFunctions), нормализация массива строк ×3, фабрика choiceRenderer только для части загадок",
+    "T01 список комнат [1,2,3,4] перечисляется в 6 местах; rewardFor/currentReward молча дают 0 на чужой id; ветка нормализации maxPossibleCoins в hydrate без теста",
+    "T01 spec — вводные var_types и fn_mission длиннее 2 фраз, while_pc не от лица Изика («Вводные — от лица Изика, 1–2 фразы»)",
+    "T01 puzzle-ui — добавлены примитивы createChoice/createCheckRows (тикет просил существующие; поверхность внутренняя)",
+    "T03 src/app/shell.ts:146 — «музыка выключена» у 🎵 inline-стилями с зашитым цветом, мимо токенов и светлой темы (app.css был вне зоны)",
+    "T03 src/services/music.ts:290 — опрос isMuted() каждые 25 мс крутится и при выключенной музыке (следствие сигнатуры createMusic(isMuted) в interfaces)",
+    "T03 src/services/music.ts — setTimeout в dropBus не отменяется в destroy(); дубль «ленивый ресурс на контекст» (pulse25/noise)",
+    "T03 tests/music.test.ts:155,180 — тесты держатся за имя метода AudioParam и порядок создания шин",
+    "T03 music? необязателен в зависимостях экранов аркады и рейтинга — лишние ветки без кнопки 🎵"
   ],
   "reviewers": {
     "manifestSpec": "rev-ms (a566482ccc494e854)",

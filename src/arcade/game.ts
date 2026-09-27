@@ -2,7 +2,7 @@
 
 import type { RunResult } from '../core/types';
 import type { SfxName } from '../services/sfx';
-import { advanceClock, clockAlpha, createClock } from './clock';
+import { advanceClock, clockAlpha, createFixedClock as createClock } from '../core/clock';
 import {
   createWorld,
   runStats,
