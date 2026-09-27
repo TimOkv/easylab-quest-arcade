@@ -1,7 +1,7 @@
 window.STATE =
 {
   "slug": "quest-walkable-rooms",
-  "dir": "2026-09-27-quest-walkable-rooms--wip",
+  "dir": "2026-09-27-quest-walkable-rooms",
   "title": "Котик ходит по 4 комнатам, 8 загадок, 8-бит музыка",
   "mode": "interview",
   "depth": "deep",
@@ -11,8 +11,8 @@ window.STATE =
   "memoryFile": "CLAUDE.md",
   "skillDir": "/Users/timofejokunev/.claude/skills/autopilot",
   "startedAt": "2026-09-27T14:38:15+03:00",
-  "updatedAt": "2026-09-27T23:58:00+03:00",
-  "finishedAt": null,
+  "updatedAt": "2026-09-28T01:40:00+03:00",
+  "finishedAt": "2026-09-28T01:40:00+03:00",
   "stages": [
     {
       "id": "preflight",
@@ -51,8 +51,8 @@ window.STATE =
       "id": "build",
       "status": "done",
       "startedAt": "2026-09-27T16:19:40+03:00",
-      "note": "6 из 6 тасков готовы",
-      "finishedAt": "2026-09-27T23:58:00+03:00"
+      "note": "таск 07 — доводка по итогам приёмки",
+      "finishedAt": "2026-09-28T00:00:00+03:00"
     },
     {
       "id": "review",
@@ -63,12 +63,15 @@ window.STATE =
     },
     {
       "id": "final",
-      "status": "pending"
+      "status": "done",
+      "startedAt": "2026-09-28T00:00:00+03:00",
+      "note": "слепая приёмка: 17 из 19 совпало; расхождение по магниту закрыто таском 07, значок на худи — ограничение пиксельного спрайта",
+      "finishedAt": "2026-09-28T01:40:00+03:00"
     }
   ],
   "requirements": {
-    "total": 31,
-    "done": 31,
+    "total": 33,
+    "done": 33,
     "inTicket": 0,
     "inSpec": 0,
     "placeholder": 0,
@@ -352,11 +355,77 @@ window.STATE =
         "tests/e2e/support/flow.ts",
         "docs/INTEGRATION.md",
         "docs/adr/0004-coin-formula.md"
+      ],
+      "commit": "6acbb36"
+    },
+    {
+      "id": "07",
+      "title": "Доводка по приёмке: магнит, токены цветов, старое прохождение",
+      "requirements": [
+        "R09",
+        "R24i",
+        "R19",
+        "R28i"
+      ],
+      "blockedBy": [
+        "06"
+      ],
+      "wave": 5,
+      "zone": [
+        "src/quest/",
+        "src/app/",
+        "src/core/",
+        "src/services/curator.ts",
+        "src/services/bridge.ts",
+        "scripts/prep-rooms.py",
+        "src/assets/rooms/",
+        "tests/"
+      ],
+      "status": "done",
+      "retries": 0,
+      "repairs": 1,
+      "handoffs": 0,
+      "startedAt": "2026-09-28T00:20:00+03:00",
+      "finishedAt": "2026-09-28T01:40:00+03:00",
+      "commit": "aa29656",
+      "tests": {
+        "passed": 345,
+        "failed": 0
+      },
+      "files": [
+        "src/core/rules.ts",
+        "src/core/state.ts",
+        "src/core/types.ts",
+        "src/app/app.ts",
+        "src/app/app.css",
+        "src/app/shell.ts",
+        "src/quest/screen.ts",
+        "src/quest/quest.css",
+        "src/quest/world/brand.ts",
+        "src/quest/world/rooms.ts",
+        "src/services/curator.ts",
+        "src/services/bridge.ts",
+        "scripts/prep-rooms.py",
+        "src/assets/rooms/kitchen.webp",
+        "docs/INTEGRATION.md",
+        "tests/css-tokens.test.ts"
       ]
     }
   ],
   "singlePass": null,
-  "tests": null,
+  "tests": {
+    "unit": {
+      "passed": 345,
+      "failed": 0
+    },
+    "e2e": {
+      "passed": 8,
+      "skipped": 2,
+      "failed": 0
+    },
+    "build": "ok",
+    "size": "0.660 МБ из 1.8"
+  },
   "debt": {
     "placeholders": [],
     "assumptions": [],
@@ -408,11 +477,33 @@ window.STATE =
     "T06 src/quest/screen.ts:57 — звуки декора: «мурр (низкий тон)» у спящего кота звучит как click, «нота» у гитары — как jump (таблица «Декор» просит свои звуки)",
     "T06 src/assets/rooms/kitchen.webp — светлый прямоугольник у стены так и остался (не входил в ремонт)",
     "T06 скриншот спальни — «Решено ✓ +10» частично закрывает ✓ своего же шкафа",
-    "T06 src/quest/screen.ts:899,1056,1083 — отклик панели и шаги триумфа по-прежнему на setTimeout, на паузе поворота идут"
+    "T06 src/quest/screen.ts:899,1056,1083 — отклик панели и шаги триумфа по-прежнему на setTimeout, на паузе поворота идут",
+    "T07 src/quest/world/brand.ts:8 — фирменный синий в двух источниках: EASYCODE_BLUE/EASYCODE_LIGHT в TS (SVG, canvas) и --ezq-blue-rgb в app.css; магнит добавил #0A1230, #D5E4FF",
+    "T07 tests/css-tokens.test.ts:43,54,56 — три утверждения держатся за точный текст реализации (формула --ezq-blue, строка '--ezq-gold', форма .ezq-music__slash)",
+    "T07 src/quest/screen.ts:533 — цвет метки клика кешируется один раз и не обновляется при смене темы; пустой catch в tokenColor оставляет чёрный",
+    "T07 favicon.ico — 404 в консоли: в index.html нет <link rel=\"icon\"> (index.html вне зоны; на работу не влияет)",
+    "T07 hex-константы остались в canvas/SVG-модулях (effects.ts, cat-sprite.ts, аркада) — canvas не читает var()"
   ],
   "reviewers": {
     "manifestSpec": "rev-ms-06 (a07a8c30f1ceb1979)",
     "craft": "rev-craft-06 (a6a532f5158bd6a5e)"
   },
-  "blind": null
+  "blind": {
+    "ranAt": "2026-09-28T00:20:00+03:00",
+    "verdict": "сценарий пройден в браузере целиком (ПК), на телефоне — горизонталь, загадка, поворот",
+    "agreed": 17,
+    "drift": [
+      "R09 — значок на худи: при размере пиксельного спрайта логотип не различить (частично)",
+      "R09 — магнит на холодильнике: маленький синий знак, слова easycode не видно (частично) → таск 07"
+    ],
+    "notes": [
+      "3 ответа 404 в консоли на ПК в dev → разбирается в таске 07"
+    ],
+    "resolved": [
+      "R09 магнит → таск 07 (плашка «знак + easycode»), принято ревью"
+    ],
+    "open": [
+      "R09 значок на худи — при размере пиксельного спрайта логотип не различить"
+    ]
+  }
 }

@@ -104,3 +104,11 @@ export const PUZZLES_BY_ROOM: Record<RoomIndex, readonly [PuzzleId, PuzzleId]>;
 - Звуки декора пока сопоставлены существующим sfx (note→jump, ding→coin, noteUp→spring, purr→click) — своих патчей в `services/sfx` нет.
 - e2e: `QuestHooks.onWalk(tag)`, `shot(page, name, prefix?, settleMs?)`; мобильный e2e — в горизонтали; скриншоты `walk-*.png` и `final-*.png`.
 - Хореография финала (панель → постер → триумф) идёт по часам сцены `simT` и стоит на паузе «Поверни телефон»; плашка двери — в нижней полосе у двери. Чердак: заплатки углов `'streak'` в `scripts/prep-rooms.py`.
+
+### Из таска 07 — доводка по приёмке
+
+- `core/rules`: `LEGACY_MAX_COINS = 75`, `isLegacyFormat(q)` (максимум 75), `hasLocalBreakdown(q)` (не восстановлено с сервера), `hasPuzzleRecords(q)`, `maxCoinsFromServer(coinsMax, coins)`. `core/types`: `quest.isRestored: boolean`.
+- Мост: у восстановленного прохождения `rooms: []` и `puzzles: []`; непустой `rooms` в сумме равен `coinsEarned`.
+- CSS-токены: цвета квеста — `--ezq-*` на `.ezq-root` (тройки `--ezq-*-rgb` для прозрачности); `tests/css-tokens.test.ts` запрещает hex/rgba в `quest.css`. Кнопка 🎵 — `.ezq-music__slash`.
+- Магнит на холодильнике — плашка «знак + easycode» 110×40.
+

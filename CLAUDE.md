@@ -307,80 +307,97 @@ ON public.leaderboard (score DESC, created_at ASC);
 <!-- autopilot:start -->
 # EasyLab Quest & Endless Arcade — рабочая память
 
-Веб-модуль для учеников школы Easycode (6–17 лет): квест из 4 комнат с динамическими EasyCoins и кодом `EZ-XXXX` → аркада-джампер с сезонным рейтингом; плюс кабинет куратора и стенд интеграции с платформой EasyLab.
+Веб-модуль школы Easycode (6–17 лет): ученик водит котика Изика по 4 комнатам, решает 8 загадок за EasyCoins (до 150) и получает код `EZ-XXXX` → аркада-джампер с сезонным рейтингом; плюс кабинет куратора и стенд интеграции с EasyLab.
 
 ## Команды
 
 ```bash
 npm install                                   # только devDependencies; браузеры Playwright не нужны — e2e идут в установленном Google Chrome
-npm run dev                                   # Vite: /, /verify.html, /parent_test.html
+npm run dev                                   # Vite: /, /verify.html, /parent_test.html; стенд мира — /tests/e2e/world-harness.html?view=room&n=1 (или ?view=sprite)
 npm run build                                 # tsc --noEmit (включая tests/) + vite build → dist/ (3 входа)
 npm run preview                               # раздать dist/
 npm run check:size                            # dist/ ≤ 1.8 МБ и REST-клиент < 3000 Б; сначала build; другая папка: node scripts/check-size.mjs <dir>
 npm test                                      # vitest run: unit + DOM (happy-dom) + SQL (PGlite)
 npx vitest run tests/rules.test.ts            # один файл
 npm run check:css                             # только линтер префикса ezq-
-npx playwright test                           # все e2e (= npm run test:e2e)
+npx playwright test                           # все e2e (= npm run test:e2e), ~7 мин
 npx playwright test tests/e2e/arcade.spec.ts  # один e2e-файл (webServer-сборки всё равно поднимутся)
-EZQ_FINAL_SHOTS=1 npx playwright test tests/e2e/acceptance.spec.ts  # перезаписать final-*.png
+EZQ_FINAL_SHOTS=1 npx playwright test tests/e2e/acceptance.spec.ts  # перезаписать final-*.png и walk-*.png
 EZQ_SHOTS=1 npx playwright test tests/e2e/arcade.spec.ts            # снять 2 пропускаемых теста скриншотов аркады
+python3 scripts/prep-rooms.py                 # пересобрать src/assets/rooms/*.webp из исходников (нужен Pillow); --preview <папка> — PNG с разметкой заплаток
 ```
 
 ## Структура
 
 ```
 index.html, verify.html, parent_test.html  # три входа сборки (vite.config.ts → rollupOptions.input)
-src/core/          # types.ts (все общие типы), state.ts (store + ezq_save_v1), rules.ts (монеты, код, ник, античит)
-src/app/           # mountApp: проводка сервисов, роутер с охраной, shell (fitStage, тосты, жесты), app.css с токенами
-src/quest/         # 4 загадки (puzzles.ts), controller.ts (ход квеста без DOM), сцена-камера по room.jpg, триумф
-src/arcade/        # движок с фиксированным шагом (engine/clock), canvas-рендер, процедурные спрайты, экран профиля
+src/core/          # types.ts (все общие типы), state.ts (store + ezq_save_v1 + миграция), rules.ts (монеты, код, ник, античит), clock.ts (фиксированный шаг), dom.ts
+src/app/           # mountApp: проводка сервисов, роутер с охраной, shell (fitStage, тосты, жесты, кнопки 🔊/🎵), app.css с токенами
+src/quest/         # 8 загадок (puzzles.ts + puzzle-ui.ts), controller.ts (ход квеста без DOM), scene.ts (сцена 1600×900), screen.ts (весь UI квеста), effects.ts, texts.ts
+src/quest/world/   # rooms.ts (разметка 4 комнат), walk.ts (сетка + A*), cat-sprite.ts (пиксельный Изик), brand.ts (SVG-логотип Easycode)
+src/assets/rooms/  # bedroom|kitchen|library|attic.webp — фоны комнат; src/ — исходные JPG для prep-rooms.py (в бандл не идут)
+src/arcade/        # движок (engine.ts; clock.ts — реэкспорт core/clock), canvas-рендер, процедурные спрайты, экран профиля
 src/leaderboard/   # экран рейтинга: ТОП-10, бейджи ТОП-3, позиция, сезон, авто-обновление
-src/services/      # rest (fetch → PostgREST), curator, leaderboard (очередь), bridge (postMessage), sfx (WebAudio)
+src/services/      # rest (fetch → PostgREST), curator, leaderboard (очередь), bridge (postMessage), sfx + music (WebAudio-синтез)
 src/verify/        # кабинет куратора (verify.html)
 src/parent-test/   # стенд моста (parent_test.html): модуль в iframe, форма AUTH_INIT, журнал
+scripts/           # check-size.mjs, prep-rooms.py (разовая подготовка фонов, не часть сборки)
 supabase/schema.sql                 # вся БД: таблицы, RLS, view leaderboard, RPC, триггер в Google-таблицу
 integrations/google-apps-script/    # Code.gs — приёмник вебхука в Google Таблицу
-docs/              # SUPABASE_SETUP.md, GOOGLE_SHEETS.md, INTEGRATION.md
-tests/             # vitest (*.test.ts, services/, sql/, helpers/css-lint.ts), e2e/ (Playwright)
+docs/              # SUPABASE_SETUP.md, GOOGLE_SHEETS.md, INTEGRATION.md, adr/ (архитектурные решения, ADR)
+tests/             # vitest (*.test.ts, services/, sql/, helpers/css-lint.ts), e2e/ (Playwright, support/flow.ts, стенды *-harness.html)
 ```
 
 ## Ключевые файлы
 
-- `src/core/rules.ts` — `REWARDS` (награда по номеру верной попытки: [1-я, 2-я, 3+]), `rewardFor(room, attempts, hintsUsed)` (2 подсказки → 0), `generateVerificationCode`/`isValidVerificationCode`/`normalizeVerificationCode` (алфавит `CODE_ALPHABET` без 0/1/I/O; кириллица → латиница), `validatePlayerName` (2–16, мат-фильтр), `isRunPlausible` + `MAX_POINTS_PER_SECOND=120`, `MIN_RUN_SECONDS=5`, `MAX_SCORE=50000`.
-- `src/core/state.ts` — `createStore({ storage, now?, win?, newSessionId? }) → { get, update(draft ⇒ void), subscribe((s, prev, 'local'|'external') ⇒ …), replace, isMemoryOnly, destroy }`; `SAVE_KEY='ezq_save_v1'`, битое сохранение уходит в `ezq_save_v1_corrupt`.
-- `src/core/types.ts` — `EasyQuestGameState` (бриф §4.1 + поля с пометкой `// §2`), `RunResult`, `SubmitOutcome` (`counted|queued|rejected|demo`), `LeaderboardService`, `CuratorSync`.
+- `src/core/types.ts` — `EasyQuestGameState` (бриф §4.1 + поля `// §2`), `PuzzleId` и `PUZZLES_BY_ROOM` (1: `var_types`, `var_assign` · 2: `if_fridge`, `and_kettle` · 3: `for_shelf`, `while_pc` · 4: `fn_play`, `fn_mission`), `PUZZLE_IDS`, `roomOfPuzzle`, `RunResult`, `SubmitOutcome` (`counted|queued|rejected|demo`), `LeaderboardService`, `CuratorSync`.
+- `src/core/rules.ts` — `PUZZLE_REWARDS[pid]` по номеру верной попытки [1-я, 2-я, 3+] = пул комнаты: 10/7/5, 15/11/8, 20/14/10, 30/22/15; `roomMaxReward` (20/30/40/60), `MAX_TOTAL_COINS=150`, `rewardFor(pid, attempts, hintsUsed)` (2 подсказки → 0); `generate/isValid/normalizeVerificationCode` (алфавит без 0/1/I/O, кириллица → латиница), `validatePlayerName` (2–16, мат-фильтр), `isRunPlausible` (`MAX_POINTS_PER_SECOND=120`, `MIN_RUN_SECONDS=5`, `MAX_SCORE=50000`).
+- `src/core/state.ts` — `createStore({ storage, now?, win?, newSessionId? }) → { get, update(draft ⇒ void), subscribe((s, prev, 'local'|'external') ⇒ …), replace, isMemoryOnly, destroy }`; `SAVE_KEY='ezq_save_v1'`, битое сохранение уходит в `ezq_save_v1_corrupt`; миграция старых сохранений — в `hydrate`.
+- `src/core/clock.ts` — `createFixedClock`, `advanceClock(clock, frameMs) → шагов`, `clockAlpha`, `STEP_MS=1000/60`; общий для квеста и аркады.
 - `src/app/app.ts` — `mountApp(root, { storage?, win?, rest?, bridge?, screens?, authWaitMs? })`, `questCompletedPayload(state)`; единственное место, где сервисы связываются между собой.
 - `src/app/router.ts` — `resolveScreen` / `startScreen`: без квеста — только `quest`, после — `quest` недоступен.
-- `src/app/screens.ts` — `SCREENS` (фабрики экранов) и `AppContext`.
-- `src/quest/controller.ts` — `createQuestController(store, { onCompleted?, now?, randomFn? })`: `submit`, `useHint`, `canUseHint`, `advance`, `startQuest`, `currentReward`.
-- `src/quest/puzzles.ts` — `PUZZLES[1..4]`: `check(answer)` чистая, `render(el, { onAnswerChange })`.
-- `src/quest/scene.ts` — `ZONES`: фокус камеры и hotspot каждой комнаты в пикселях исходника 1586×992.
+- `src/app/screens.ts` — `SCREENS` (фабрики экранов) и `AppContext` (в т.ч. `music`).
+- `src/app/shell.ts` — `fitStage`, `copyText`, `showToast`, `blockGestures`, `createMuteButton(store, sfx)` (эффекты), `createMusicButton(store)` (музыка).
+- `src/quest/controller.ts` — `createQuestController(store, { onCompleted?, now?, randomFn? })` → `{ submit(pid, answer), useHint(pid), canUseHint(pid, 1|2), currentReward(pid), isRoomCleared(room), advance(), startQuest(name) }`; отказы `submit`: `LOCKED|NOT_CURRENT|ALREADY_SOLVED|INCOMPLETE`.
+- `src/quest/puzzles.ts` — `PUZZLES: Record<PuzzleId, PuzzleDef>` (`check(answer)` чистая, `render(host, { onAnswerChange }) → PuzzleView`, `hints: [2]`); виджеты — `src/quest/puzzle-ui.ts`; верные ответы всех 8 — `RIGHT` в `tests/quest-screen.test.ts`.
+- `src/quest/screen.ts` — `mountQuestScreen(host, { store, sfx, controller, isServerConfigured, onGoToArcade, music? })`: весь UI квеста (см. «Архитектуру»).
+- `src/quest/scene.ts` — `createRoomStage() → { stage, bg, objects, canvas, ctx, ui, toStage(clientX, clientY) }`, `STAGE_W=1600`, `STAGE_H=900`.
+- `src/quest/world/rooms.ts` — `ROOMS_DEF[1..4]: RoomDef { key, title, image, floor, obstacles, objects, door: { exit|null, entry|null }, spawn }`; `RoomObject { id, label, rect, approach, radius, puzzleId? | decor?: { line, sfx }, brand?, brandRect? }`.
+- `src/quest/world/walk.ts` — `buildGrid(def)` (клетка 20 px, отступ от мебели `PAD_X=30`/`PAD_Y=6`), `findPath(grid, from, to) → Pt[]` (A*, 8 направлений, сглаживание), `nearestWalkable(grid, pt, from?)`, `createWalker(grid, spawn) → { pos, dir, moving, setPath, setInput(vec), step(dt), place }`; ручной вектор отменяет путь.
+- `src/quest/world/cat-sprite.ts` — `createCatSprite().draw(ctx, x, y, dir, 'idle'|'walk', tSec)`, (x, y) — точка между лапами; `src/quest/world/brand.ts` — `easycodeLogoSvg('screen'|'magnet'|'poster')`.
+- `src/services/sfx.ts` — `createAudioContextProvider()` (один AudioContext на всё), `createSfx(isMuted, audio?)`; `src/services/music.ts` — `createMusic(isMuted, audio?) → { play('quest'|'arcade'), stop(), duck(on), unlock(), destroy() }`, секвенсор без аудиофайлов.
 - `src/arcade/engine.ts` — `createWorld(seed, opts)`, `stepWorld(world, { left, right }, dt)`, `botInput`, `runStats`, `scoreForHeight` (1 очко = 10 px), пороги сложности `*_FROM`.
 - `src/arcade/game.ts` — `createArcadeGame(canvas, { highScore, onGameOver, sfx?, readInput?, seed? })`, `newRunId()` (UUID v4), `newRunSeed()`.
-- `src/arcade/screen.ts` — `mountArcadeScreen(host, { store, sfx, onGameOver, onOpenLeaderboard, dailyLimit?, autoStart?, readInput? })`, `recordRun(store, r, now)`.
+- `src/arcade/screen.ts` — `mountArcadeScreen(host, { store, sfx, music?, onGameOver, onOpenLeaderboard, dailyLimit?, autoStart?, readInput? })`, `recordRun(store, r, now)`.
 - `src/services/rest.ts` — `createRestClient({ url, anonKey, fetchImpl?, timeoutMs=8000 })` → `{ isConfigured, select, rpc }`; ошибки `NotConfiguredError`, `NetworkError` (сеть/таймаут/5xx/408/429), `RpcError(code)` (`code` — префикс текста RAISE или `HTTP_<status>`).
-- `src/services/curator.ts` — `syncNow()` → RPC `register_quest_completion`; `restoreByStudent(id)`; `startRetryLoop()` (30 с → ×2 до 5 мин, `online`).
+- `src/services/curator.ts` — `syncNow()` → RPC `register_quest_completion`; `restoreByStudent(id)`; `startRetryLoop()` (30 с → ×2 до 5 мин, `online`); `BAD_NAME`/`BAD_COINS` не повторяются.
 - `src/services/leaderboard.ts` — `submitRun`, `flushQueue`, `fetchTop` (`TOP_QUERY`), `fetchStanding`, `fetchSeason`, `startRetryLoop`; очередь `ezq_pending_scores_v1` (≤ 50).
 - `src/services/bridge.ts` — `createBridge({ win?, extraOrigins? })`, `isAllowedOrigin`, `parseExtraOrigins`.
-- `src/verify/page.ts` — `mountVerifyPage(root, { rest, win?, refreshMs=15000 })`; `src/verify/format.ts` — время МСК.
+- `src/verify/page.ts` — `mountVerifyPage(root, { rest, win?, refreshMs=15000 })`, монеты «N из M» по `coins_max`; `src/verify/format.ts` — время МСК.
 - `supabase/schema.sql` — источник истины RPC-контракта (имена параметров, коды ошибок).
 
 ## Архитектура
 
-- `src/main.ts` → `mountApp(#ezq-app)`: создаёт store, sfx, rest (из env), bridge, curator, leaderboard, controller; запускает оба retry-цикла; затем роутер монтирует экран в `.ezq-screen-host`.
+- `src/main.ts` → `mountApp(#ezq-app)`: создаёт store, один `AudioContextProvider` → sfx + music, rest (из env), bridge, curator, leaderboard, controller; запускает оба retry-цикла; затем роутер монтирует экран в `.ezq-screen-host`.
 - Экраны получают зависимости только через `AppContext` (`src/app/screens.ts`) и не импортируют друг друга; сервисы не знают про DOM.
 - Состояние: всё пишется через `store.update` → сохранение в localStorage → подписчики. Store — единственная память между экранами и перезагрузками.
-- Квест: `controller.submit` пишет попытку, затем монеты; 4-я комната одним update ставит `isCompleted`, `completedAt`, `verificationCode`, `arcade.isUnlocked` → `onCompleted` → `curator.syncNow()` + `bridge.sendQuestCompleted`.
+- Квест: Спальня → Кухня → Библиотека → Чердак, 2 загадки в комнате в любом порядке. `submit` пишет попытку, затем монеты; истина — `quest.puzzles`, `quest.rooms[n]` и `totalCoinsEarned` пересчитываются. 8-я решённая загадка одним update ставит `isCompleted`, `completedAt`, `verificationCode`, `arcade.isUnlocked` → `onCompleted` → `curator.syncNow()` + `bridge.sendQuestCompleted`.
+- Экран квеста: rAF + `core/clock` (время сцены `simT`); режимы `root.dataset.mode` = `intro | walk | puzzle | door | triumph`, ходьба считается только в `walk`.
+- Ввод: стрелки/WASD, клик/тап по полу (`toStage` → `findPath`), `E`/`Enter`/`Space` — действие. Изик у предмета (≤ `radius` от `approach`) → «Пройти задачу» (`.ezq-qact`) → панель загадки.
+- Обе загадки решены → дверь `.ezq-qdoor[data-state=open]` и плашка `DOOR_OPEN_TEXT`; у двери `controller.advance()` → уход в проём, `.ezq-qwipe`, `.ezq-qcard`, вход от `door.entry.from` к `spawn` (там же Изик после перезагрузки).
+- Декор: облачко `.ezq-qsay--decor` + звук, не чаще раза в 4 с; логотипы `.ezq-qbrand--*` загораются: экран — когда Изик рядом, постер — в финале (панель → постер → триумф).
+- Музыка: квест — `play('quest')` (`duck(true)` при открытой загадке), аркада — `play('arcade')`, рейтинг — та же тема с `duck(true)`; sfx и музыку разблокирует первый `pointerdown`/`keydown` в корне.
 - Аркада: game over → `recordRun` в store → через ~0.9 с `ctx.onGameOver` → `leaderboard.submitRun` (промис кладётся в `ctx.lastRun`) → `bridge.sendGameFinished` после ответа → роутер на `leaderboard`.
 - Рейтинг: забег уходит на сервер только после `quest.isSyncedWithCurator`; `doFlush` сам зовёт `curator.syncNow()`. Отказы `CHEAT_SPEED/TOO_SHORT/SCORE_RANGE/NO_QUEST/BAD_CODE/RATE_LIMIT` удаляют забег из очереди, `BAD_NAME` держит до смены ника, сеть — backoff.
 - Supabase: anon видит только view `public.leaderboard` и RPC (`SECURITY DEFINER`), таблицы закрыты RLS без политик.
-  - Ученик: `register_quest_completion(p_code, p_player_name, p_student_id, p_coins, p_completed_at)`, `restore_by_student(p_student_id)`, `submit_arcade_score(p_run_id uuid, p_code, p_session_id, p_student_id, p_player_name, p_score, p_time_spent, p_jumps)`, `get_my_standing(p_code)`, `get_season_info()`.
+  - Ученик: `register_quest_completion(p_code, p_player_name, p_student_id, p_coins, p_completed_at)` (`p_coins` 0..150), `restore_by_student(p_student_id)` → `{ verification_code, coins_earned, coins_max, player_name, completed_at }`, `submit_arcade_score(p_run_id uuid, p_code, p_session_id, p_student_id, p_player_name, p_score, p_time_spent, p_jumps)`, `get_my_standing(p_code)`, `get_season_info()`.
   - Куратор (первый аргумент `p_secret`): `curator_check`, `curator_find`, `curator_recent`, `curator_set_awarded`, `curator_leaderboard`, `curator_set_hidden`, `curator_set_daily_limit`, `curator_set_countdown`, `curator_finish_season`, `curator_winners`.
   - Только SQL Editor: `ezq_set_curator_secret(secret)`. Коды ошибок: `NO_QUEST BAD_CODE BAD_NAME BAD_COINS CHEAT_SPEED TOO_SHORT SCORE_RANGE RATE_LIMIT CODE_TAKEN FORBIDDEN BAD_LIMIT`.
-- Google Таблица: триггер `ezq_notify_sheets` (pg_net, при insert и смене `is_awarded`) шлёт `{ secret, event: 'insert'|'awarded', row }` в `integrations/google-apps-script/Code.gs` (`doPost`); URL и секрет — в `public.ezq_settings`.
+  - `quest_completions.coins_max` (по умолчанию 150; записи до обновления — 75) — во всех ответах register/restore и карточках `curator_*`.
+- Google Таблица: триггер `ezq_notify_sheets` (pg_net, при insert и смене `is_awarded`) шлёт `{ secret, event: 'insert'|'awarded', row }` (в `row` есть `coins_max`) в `integrations/google-apps-script/Code.gs` (`doPost`, пишет «N из M»); URL и секрет — в `public.ezq_settings`.
 - Мост: исходящие — конверт `{ source: 'ezq', version: 1, type, payload }`:
   - `EASYLAB_READY {}` при старте во iframe;
-  - `EASYLAB_QUEST_COMPLETED { coinsEarned, maxCoins: 75, verificationCode, completedAt (ISO), studentId, rooms: [{ room, id, earnedCoins, maxReward, attempts, hintsUsed }] }` — повторно, если код перевыпущен;
+  - `EASYLAB_QUEST_COMPLETED { coinsEarned, maxCoins (150; 75 у старых прохождений), verificationCode, completedAt (ISO), studentId, rooms: [4 × { room, id, earnedCoins, maxReward, attempts, hintsUsed }], puzzles: [8 × { id, room, earnedCoins, maxReward, attempts, hintsUsed }] (пусто у старых) }` — у прохождения, взятого с сервера (`quest.isRestored`), `rooms: []` и `puzzles: []` («разбивка неизвестна»); непустой `rooms` в сумме равен `coinsEarned` — повторно, если код перевыпущен;
   - `EASYLAB_GAME_FINISHED { score, highScore, seasonTotal, durationSeconds, jumpsCount, verificationCode }`.
   - Входящее: `{ type: 'EASYLAB_AUTH_INIT', payload: { studentId, name, theme } }` (конверт не обязателен), только от `window.parent` с разрешённого origin; `studentId` → `restoreByStudent`.
 - Кабинет куратора: `src/verify/main.ts` → `mountVerifyPage`, работает только через RPC `curator_*`; секрет в адресе `verify.html#k=<секрет>`.
@@ -388,17 +405,18 @@ tests/             # vitest (*.test.ts, services/, sql/, helpers/css-lint.ts), e
 ## Соглашения кода
 
 - CSS: каждый составной селектор начинается с `.ezq-`, анимации `@keyframes ezq-*`; никаких тегов, `:root`, `*`, `@import`. Проверяет `tests/css-prefix.test.ts` по всем `src/**/*.css`.
-- CSS-токены `--ezq-*` объявляются на корне страницы: `.ezq-root` (`src/app/app.css`), `.ezq-verify-root`, `.ezq-pt-root`. Светлая тема — `.ezq-root[data-ezq-theme="light"]`.
+- CSS-токены `--ezq-*` объявляются на корне страницы: `.ezq-root` (`src/app/app.css`), `.ezq-verify-root`, `.ezq-pt-root`. Светлая тема — `.ezq-root[data-ezq-theme="light"]`. Цвета в CSS — только через токены (для прозрачности — тройки `--ezq-*-rgb` и `rgba(var(--ezq-*-rgb), a)`); `tests/css-tokens.test.ts` запрещает hex/rgba в `src/quest/quest.css`. Canvas и SVG-строки (`brand.ts`, `cat-sprite.ts`, аркада) держат свои hex — `var()` там не читается.
 - Прокрутка работает только внутри `.ezq-scroll` (`blockGestures` гасит `touchmove` вне него); кнопки — класс `.ezq-btn`.
 - Каждый экран сам импортирует свой CSS (`import './quest.css'` и т.п.).
-- Правила монет, кода, ника и античита — только из `src/core/rules.ts`, свои копии не писать. Их серверные зеркала в `supabase/schema.sql` (`ezq_is_code`, `ezq_name_error`, 75/120/5/50000) меняются вместе с ними.
+- Правила монет, кода, ника и античита — только из `src/core/rules.ts`, свои копии не писать. Их серверные зеркала в `supabase/schema.sql` (`ezq_is_code`, `ezq_name_error`, 150/120/5/50000) меняются вместе с ними.
 - Время для людей — `Europe/Moscow`, `ДД.ММ.ГГГГ ЧЧ:ММ`, через `src/verify/format.ts`.
-- Пользовательские строки (ники, имена) — только `textContent`; `innerHTML` — лишь статичные SVG-константы.
+- Пользовательские строки (ники, имена) — только `textContent`; `innerHTML` — лишь статичные SVG-константы (в т.ч. `easycodeLogoSvg`).
 - Новое поле состояния: добавить в `src/core/types.ts` и в `createInitialState` — старые сохранения дополнятся значениями по умолчанию (`mergeInto`); типы только расширять.
 - `RunResult.runId` — UUID v4 (`newRunId`), иначе сервис подменит id и повтор может засчитаться дважды.
 - DOM собирается через `el`/`button` из `src/core/dom.ts`, UUID — `newUuid` из `src/core/state.ts`; своих копий в экранах не заводить.
-- Рантайм-зависимостей нет (в `package.json` только devDependencies); единственный растровый ассет — `src/assets/room.jpg`, остальное — canvas/CSS/inline SVG.
-- Тексты интерфейса — по-русски, на «ты».
+- Рантайм-зависимостей нет (в `package.json` только devDependencies). Растровые ассеты в бандле — только `src/assets/rooms/*.webp`; Изик, логотип, аркада — canvas/CSS/inline SVG; звук — только синтез, аудиофайлов нет.
+- Координаты мира (`ROOMS_DEF`, `STAGE_*`) — пиксели сцены 1600×900; препятствие — весь силуэт мебели на картинке, отступ добавляет `walk.ts` (`PAD_X/PAD_Y`).
+- Тексты интерфейса — по-русски, на «ты»; герой — котик Изик.
 
 ## Окружение
 
@@ -411,34 +429,42 @@ tests/             # vitest (*.test.ts, services/, sql/, helpers/css-lint.ts), e
 ## Тесты
 
 - Vitest: `tests/**/*.test.ts`, окружение по умолчанию `node`; DOM-тесты объявляют `// @vitest-environment happy-dom` первой строкой.
-- Сервисы тестируются на фейковых `fetch` / `window` / storage (`tests/services/helpers.ts`), без сети.
+- Сервисы тестируются на фейковых `fetch` / `window` / storage (`tests/services/helpers.ts`), без сети; музыка и sfx — на фейковом AudioContext.
+- `tests/world-walk.test.ts` — достижимость предметов и дверей по `ROOMS_DEF`; экран квеста — точечные DOM-тесты `tests/quest-screen.test.ts`, остальное — e2e.
 - `tests/sql/schema.test.ts` — `supabase/schema.sql` в PGlite (Postgres в WASM): схема применяется дважды (проверка идемпотентности), RPC зовутся под ролью `anon`.
 - Playwright (`playwright.config.ts`): `channel: 'chrome'`, браузеры не скачиваются.
   - 5231 — сборка без Supabase (демо) в `node_modules/.ezq-e2e/dist-demo`;
   - 5232 — сборка с `VITE_SUPABASE_URL=https://ezq-e2e.supabase.test`, запросы `/rest/v1/*` перехватывает `tests/e2e/support/supabase-mock.ts` на уровне контекста (iframe и verify.html видят ту же «базу»);
   - 5199 — `tests/e2e/arcade.spec.ts` поднимает свой Vite dev со страницей `tests/e2e/arcade-harness.html` (её нет в сборке).
 - `reuseExistingServer: false` и `strictPort`: занятые 5231/5232/5199 валят прогон.
-- Скриншоты — `tests/e2e/__screenshots__/`: `final-*.png` (в репо) пишутся только при `EZQ_FINAL_SHOTS=1`; `EZQ_SHOTS=1` включает скриншоты аркады (`arcade-*.png`, в репо не входят).
+- Прохождение квеста через UI — `tests/e2e/support/flow.ts` (тексты берёт из `src/quest/texts.ts`: `screen.ts` тянет CSS и картинки, Node их не загрузит); мобильный e2e квеста — в горизонтали.
+- Скриншоты — `tests/e2e/__screenshots__/`: `final-*.png` и `walk-*.png` (в репо) пишутся только при `EZQ_FINAL_SHOTS=1`; `EZQ_SHOTS=1` включает скриншоты аркады (`arcade-*.png`, в репо не входят).
 
 ## Подводные камни
 
+- Бриф выше (§1–§4) — «1 загадка на комнату, до 75»; код ушёл дальше: 8 загадок, 150, `maxPossibleCoins: 75 | 150`, `quest.format: 2`, `quest.puzzles`.
+- Миграция (`hydrate`): незавершённый квест без `format: 2` начинается заново (ник/meta/звук на месте); завершённый старый остаётся с `maxPossibleCoins: 75` и пустым `puzzles` в мосте. «Старое/восстановленное» проверяй только через `isLegacyFormat` / `hasLocalBreakdown` / `hasPuzzleRecords` из `src/core/rules.ts`, не сравнением с 75/150; миграция ставит `isRestored`, если комнаты решены без попыток или их сумма не равна итогу.
 - Демо-режим: без `VITE_SUPABASE_*` `rest.isConfigured=false` — `syncNow()`→`'demo'`, `submitRun`→`{ kind: 'demo' }`, экран рейтинга показывает только личную статистику, verify.html — ошибку конфигурации. Квест и аркада работают полностью.
 - После правки `.env` нужна пересборка: значения читаются из `import.meta.env` при сборке.
 - e2e собирает в `node_modules/.ezq-e2e/`, `dist/` не трогает; `npm run check:size` меряет именно `dist/`.
 - `npm run build` гоняет `tsc` и по `tests/` (tsconfig `include`): ошибка типов в тесте ломает сборку.
-- `leaderboard` в Supabase — view над `leaderboard_entries`, а не таблица из брифа §4.2: там сумма засчитанных очков за активный сезон (`score` = сумма `counted_score`), а не лучший забег. Старая таблица `leaderboard` переименовывается в `leaderboard_legacy_v0`; CHECK-и брифа живут в `arcade_runs`.
+- `src/assets/room.jpg` и `src/assets/rooms/src/*.JPG` — только входы `prep-rooms.py` (заплатки — `PATCHES`), из кода не импортируются. После перегенерации фона сверь разметку на `world-harness.html?view=room&n=…`.
+- Входы и точки подхода в `ROOMS_DEF` подогнаны под `PAD_X=30`: правка отступов или препятствий ломает достижимость (ловит `tests/world-walk.test.ts`).
+- «Поверни телефон» (`.ezq-qrotate`, портрет + `pointer: coarse`) ставит сцену на паузу, `simT` и хореография финала стоят; на триумфе скрыт.
+- Звуки декора — существующие патчи sfx (`DECOR_SOUND` в `screen.ts`), своих нет.
+- `BAD_COINS` (база не обновлена до 150) — без повторов, `quest.lastSyncError`, текст на триумфе. Ответ без `coins_max` → 75 при монетах ≤ 75, иначе 150 (`maxCoinsFromServer`).
 - Засчитывается не больше дневного лимита на код (`ezq_daily_limit`, по умолчанию 3000, сутки по МСК); больше 60 забегов в сутки → `RATE_LIMIT`; после `ends_at` сезона забег пишется с 0.
+- `leaderboard` в Supabase — view над `leaderboard_entries`, а не таблица из брифа §4.2: там сумма засчитанных очков за активный сезон (`score` = сумма `counted_score`), а не лучший забег. Старая таблица `leaderboard` переименовывается в `leaderboard_legacy_v0`; CHECK-и брифа живут в `arcade_runs`.
 - `store.get()` глубоко заморожен — менять только в `update(draft => …)`.
 - Роутер сам реагирует только на `external`-изменения (другая вкладка). Локальная запись `navigation.currentScreen` экран не меняет — нужен `router.go` (так сделано после `restoreByStudent`).
 - Локальное завершение квеста не уводит в аркаду: остаётся триумф, уход по кнопке; редирект — только при старте/перезагрузке или из другой вкладки.
 - Завершение необратимо: `update` подхватывает завершённое сохранение из storage, а storage-событие с незавершённым квестом игнорируется.
-- Квест: 1-я подсказка — только после ≥ 1 попытки; `INCOMPLETE` (ответ не собран) попыткой не считается; попытка сохраняется до показа результата.
-- Сервер при совпадении кода сам выдаёт свободный и возвращает его в `verification_code` (`CODE_TAKEN` больше не отвечает); клиент применяет код из ответа — тост «Код обновлён» и повтор `EASYLAB_QUEST_COMPLETED`. Если у `student_id` уже есть прохождение, сервер вернёт `restored: true` со своими кодом и монетами — они перезапишут локальные.
+- Квест: 1-я подсказка загадки — только после ≥ 1 её попытки; `INCOMPLETE` (ответ не собран) попыткой не считается; попытка сохраняется до показа результата. `currentRoomIndex` растёт в момент входа в дверь (`advance()`), а не при решении.
+- Сервер при совпадении кода сам выдаёт свободный и возвращает его в `verification_code` (`CODE_TAKEN` больше не отвечает); клиент применяет код из ответа — тост «Код обновлён» и повтор `EASYLAB_QUEST_COMPLETED`. Если у `student_id` уже есть прохождение, сервер вернёт `restored: true` со своими кодом, монетами и `coins_max` — они перезапишут локальные.
 - Лимит перебора кодов в SQL: 120 единиц в час на адрес (первый из `x-forwarded-for`, 128 корзин в схеме `ezq_private`); промах по коду — 4, найденная запись по `student_id` — 1, новая регистрация — 0. После лимита — `RATE_LIMIT`. Час окна — `ezq_rl_hour()`, тесты её подменяют.
 - Во iframe модуль до 1500 мс (`AUTH_WAIT_MS`) ждёт `EASYLAB_AUTH_INIT` на экране загрузки. Исходящие сообщения до того, как известен origin родителя (из `document.referrer` или AUTH_INIT), копятся в очереди (≤ 20), `EASYLAB_READY` — не копится.
 - Разрешены `https://easycode-lab.ru`, `https://*.easycode-lab.ru` (порт по умолчанию), собственный origin и `VITE_BRIDGE_EXTRA_ORIGINS` — поэтому `parent_test.html` работает с того же origin без настройки.
-- «Четыре комнаты» — зоны одной картинки `src/assets/room.jpg` под CSS-камерой; координаты в `ZONES` заданы в пикселях исходника, не сцены 1600×900.
-- `schema.sql` должен оставаться идемпотентным (тест прогоняет его дважды); триггер Google-таблицы создаётся, только если доступно расширение `pg_net`.
+- `schema.sql` должен оставаться идемпотентным (тест прогоняет его дважды, повторный прогон — и способ обновить живую базу); триггер Google-таблицы создаётся, только если доступно расширение `pg_net`.
 
 ## Как здесь работает Autopilot
 
