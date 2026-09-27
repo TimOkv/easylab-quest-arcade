@@ -1,7 +1,7 @@
 window.STATE =
 {
   "slug": "easylab-quest-arcade",
-  "dir": "2026-09-26-easylab-quest-arcade--wip",
+  "dir": "2026-09-26-easylab-quest-arcade",
   "title": "EasyLab Quest & Endless Arcade",
   "mode": "interview",
   "depth": "deep",
@@ -11,8 +11,8 @@ window.STATE =
   "memoryFile": "CLAUDE.md",
   "skillDir": "/Users/timofejokunev/.claude/skills/autopilot",
   "startedAt": "2026-09-26T17:21:46+03:00",
-  "updatedAt": "2026-09-27T12:21:56+03:00",
-  "finishedAt": null,
+  "updatedAt": "2026-09-27T12:54:00+03:00",
+  "finishedAt": "2026-09-27T12:54:00+03:00",
   "stages": [
     {
       "id": "preflight",
@@ -51,25 +51,28 @@ window.STATE =
       "id": "build",
       "status": "done",
       "startedAt": "2026-09-26T17:58:13+03:00",
-      "note": "7 из 7 тасков готовы",
-      "finishedAt": "2026-09-27T12:21:56+03:00"
+      "note": "9 из 9 тасков готовы",
+      "finishedAt": "2026-09-27T12:22:12+03:00"
     },
     {
       "id": "review",
       "status": "done",
       "startedAt": "2026-09-26T18:09:03+03:00",
-      "note": "проверено 7 из 7",
-      "finishedAt": "2026-09-27T12:21:56+03:00"
+      "note": "проверено 9 из 9",
+      "finishedAt": "2026-09-27T12:22:12+03:00"
     },
     {
       "id": "final",
-      "status": "pending"
+      "status": "done",
+      "startedAt": "2026-09-27T12:22:12+03:00",
+      "finishedAt": "2026-09-27T12:54:00+03:00",
+      "note": "слепая приёмка: 51/52 → расхождение R41 исправлено в T09"
     }
   ],
   "requirements": {
     "total": 79,
-    "done": 0,
-    "inTicket": 79,
+    "done": 79,
+    "inTicket": 0,
     "inSpec": 0,
     "placeholder": 0,
     "deferred": 0,
@@ -416,12 +419,88 @@ window.STATE =
       "tests": {
         "passed": 232,
         "failed": 0
+      },
+      "commit": "750025a"
+    },
+    {
+      "id": "08",
+      "title": "Защита базы: перебор кодов, старая таблица",
+      "requirements": [
+        "R44",
+        "R46",
+        "R58",
+        "R65i",
+        "G03"
+      ],
+      "blockedBy": [
+        "02"
+      ],
+      "wave": 5,
+      "zone": [
+        "supabase/schema.sql",
+        "tests/sql/",
+        "docs/SUPABASE_SETUP.md"
+      ],
+      "retries": 1,
+      "repairs": 2,
+      "handoffs": 0,
+      "status": "done",
+      "startedAt": "2026-09-27T12:32:19+03:00",
+      "repairFindings": [
+        "регистрация не зависит от лимита, CODE_TAKEN → сервер выдаёт свободный код (BLOCKING)",
+        "выдача кода по student_id под лимитом (BLOCKING)",
+        "тесты лимита не зависят от настенного часа",
+        "замена занятого кода — оракул без лимита и спам реестра → повтор в свежем контексте"
+      ],
+      "finishedAt": "2026-09-27T12:54:00+03:00",
+      "commit": "c9f5649",
+      "tests": {
+        "passed": 36,
+        "failed": 0
+      }
+    },
+    {
+      "id": "09",
+      "title": "Клиент: зависания статусов, повторы, звук, общие хелперы",
+      "requirements": [
+        "R41",
+        "R48",
+        "R49",
+        "R60",
+        "R37",
+        "R29"
+      ],
+      "blockedBy": [
+        "05",
+        "06",
+        "07"
+      ],
+      "wave": 5,
+      "zone": [
+        "src/",
+        "tests/*.test.ts",
+        "scripts/check-size.mjs"
+      ],
+      "retries": 0,
+      "repairs": 1,
+      "handoffs": 0,
+      "status": "done",
+      "startedAt": "2026-09-27T12:32:19+03:00",
+      "repairFindings": [
+        "текст ошибки не обещает засчитать очки",
+        "«Повторить» не запускает вторую отправку"
+      ],
+      "finishedAt": "2026-09-27T12:50:34+03:00",
+      "commit": "f15fd06",
+      "tests": {
+        "passed": 219,
+        "failed": 0
       }
     }
   ],
   "singlePass": null,
   "tests": {
-    "passed": 232,
+    "passed": 255,
     "failed": 0
   },
   "debt": {
@@ -513,11 +592,73 @@ window.STATE =
     "T07 README.md:39 — размер сборки «0,43 МБ» вписан текстом",
     "T07 стенд parent_test под npm run dev проверен только curl'ом оркестратора (200), e2e — на vite preview",
     "T07 arcade.spec.ts:65 / README.md:134 — скриншоты аркады включает EZQ_SHOTS, остальные EZQ_FINAL_SHOTS; команда из README не снимает аркаду",
-    "T07 arcade.spec.ts:73 — const dir = SHOTS_DIR лишний псевдоним"
+    "T07 arcade.spec.ts:73 — const dir = SHOTS_DIR лишний псевдоним",
+    "T08 schema.sql — лимит по 128 корзинам хэша адреса, календарный час; соседи по NAT/корзине делят лимит get_my_standing",
+    "T08 schema.sql — первый адрес x-forwarded-for (так в документации Supabase); подделку заголовка проверить на живом проекте",
+    "T08 schema.sql — числа 128/4/1/120 литералами в нескольких функциях; связка «лимит→add→fail» повторена 4 раза",
+    "T08 schema.sql ezq_rl_add — nextval+setval не атомарны, при гонке приращения теряются",
+    "T08 submit_arcade_score — после лимита «свой код» доказывается и публичным ником",
+    "T09 app.ts:74, shell.ts:98 — экран загрузки и кнопка звука без core/dom",
+    "T09 verify/dom.ts:9 — button куратора с другой сигнатурой, h — псевдоним el",
+    "T09 curator.ts:162 — мгновенный повтор только при смене ника, ключ шире; rejectedKey только в памяти",
+    "T09 tests — окно теста curator от литерала 30_000; leaderboard-screen подменяет countedScore сам; arcade-profile разбирает CSS регуляркой",
+    "R41 — общий чанк rest-*.js 4.26 КБ (rest.ts + core/rules.ts); сам REST-клиент 1352 Б по §6",
+    "T09 leaderboard-screen.test — двойной клик по уже отсоединённой кнопке; достижимый путь — повторный submit ника во время отправки",
+    "T09 leaderboard/screen.ts:358 — синхронный throw flushQueue оставит resending=true",
+    "T08 — после лимита RATE_LIMIT против null по student_id выдаёт существование ID (код не утекает)",
+    "T08 — потерянный ответ с кодом-заменой → у гостя без student_id две записи в реестре",
+    "T08 — новые регистрации бесплатны: реестр/таблицу можно засорить спамом регистраций (было и до T08)"
   ],
   "reviewers": {
     "manifestSpec": "rev-ms3",
     "craft": "rev-craft3"
   },
-  "blind": null
+  "blind": {
+    "total": 52,
+    "done": 51,
+    "partial": 1,
+    "missing": 0,
+    "drift": [
+      "R41 «< 3 КБ кода» — исправлено в T09: REST-клиент 1352 Б"
+    ],
+    "notRun": [
+      "Google-таблица (Формат А) — нужен живой Supabase с pg_net и Apps Script",
+      "60 FPS на реальном телефоне — только эмуляция"
+    ]
+  },
+  "concernsTriage": {
+    "fixNow": [
+      "T02 legacy_v0 гранты anon → T08",
+      "T02 get_my_standing оракул кода → T08",
+      "T02 ezq_fail immutable → T08",
+      "T02 повтор run_id без p_code → T08",
+      "T05 карточка «Отправляем…» → T09",
+      "T05 submitRun ошибки как офлайн → T09",
+      "T02 BAD_NAME/BAD_COINS вечные повторы → T09",
+      "T05 questCompletedPayload на незавершённом → T09",
+      "T01/T05 AudioContext до жеста → T09",
+      "T04 touch-action кнопок аркады → T09",
+      "T03/T04/T06 копии DOM-хелперов (≥3 тасков) → T09",
+      "T02/T04 три UUID → T09",
+      "T05 литералы 16/75 → T09"
+    ],
+    "report": [
+      "T07 маленький iframe: подсказка перекрывает книгу К3",
+      "T07 Referrer-Policy no-referrer → гость (обход в INTEGRATION.md)",
+      "T07 двойной тап — проверить на реальном телефоне",
+      "T02 pg_net-вебхук и doPost не проверены без живого Supabase",
+      "T02 код отдаётся по student_id (следствие G03)",
+      "T06 секрет куратора в #k= остаётся в истории браузера",
+      "T06 pg_net не повторяет неудачный вебхук",
+      "T02 дневной лимит после завершения сезона днём",
+      "T04 пружина 20×10 мелкая на телефоне",
+      "T04 обе стороны зажаты → вправо",
+      "T02 две одноимённых гостя с одним кодом склеятся (практически недостижимо)",
+      "T02/T05 списки мата SQL и TS не связаны тестом",
+      "T06 статус «Начислено» в таблице без даты"
+    ],
+    "drop": [
+      "остальное — вкус, структура или тест-гигиена без риска для пользователя (T01 типы/дубли таблиц, T03 520-строчное замыкание, T04 мёртвый режим over, T07 e2e-мелочи и т.п.)"
+    ]
+  }
 }
