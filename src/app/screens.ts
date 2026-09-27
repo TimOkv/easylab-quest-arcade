@@ -3,6 +3,7 @@
 import type { Store } from '../core/state';
 import type { LeaderboardService, RunResult, ScreenName, SubmitOutcome } from '../core/types';
 import type { Sfx } from '../services/sfx';
+import type { Music } from '../services/music';
 import type { Bridge } from '../services/bridge';
 import type { CuratorSync } from '../core/types';
 import type { QuestController } from '../quest/controller';
@@ -21,6 +22,8 @@ export interface AppContext {
   root: HTMLElement;
   store: Store;
   sfx: Sfx;
+  /** Фоновая 8-бит музыка (общий AudioContext с sfx). Экран сам выбирает тему и приглушение. */
+  music: Music;
   /** Навигация через охрану маршрутов роутера. */
   navigate(screen: ScreenName): void;
   controller: QuestController;
@@ -54,6 +57,7 @@ export const SCREENS: Record<ScreenName, ScreenFactory<AppContext>> = {
     return mountArcadeScreen(host, {
       store: ctx.store,
       sfx: ctx.sfx,
+      music: ctx.music,
       autoStart,
       dailyLimit: ctx.isServerConfigured ? ctx.dailyLimit : undefined,
       onGameOver: (r) => ctx.onGameOver(r),
@@ -67,6 +71,7 @@ export const SCREENS: Record<ScreenName, ScreenFactory<AppContext>> = {
     mountLeaderboardScreen(host, {
       store: ctx.store,
       sfx: ctx.sfx,
+      music: ctx.music,
       service: ctx.leaderboard,
       lastRun: ctx.lastRun,
       onPlayAgain: () => {

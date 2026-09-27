@@ -1,5 +1,6 @@
 // 8-бит эффекты на WebAudio-синтезе (0 байт аудиофайлов). AudioContext создаётся только в unlock()
 // (из обработчика жеста — политика автоплея); play() до разблокировки — тихий no-op.
+// Контекст общий с музыкой (services/music): его держит AudioContextProvider.
 
 export type SfxName =
   | 'click'
@@ -68,35 +69,71 @@ const PATCHES: Record<SfxName, Note[]> = {
 
 type AudioCtor = typeof AudioContext;
 
-export function createSfx(isMuted: () => boolean): Sfx {
-  let ctx: AudioContext | null = null;
-  let master: GainNode | null = null;
+/** Громкость общей шины эффектов; музыка считает свою громкость от неё (services/music). */
+export const SFX_MASTER_GAIN = 0.6;
 
-  const ensure = (): AudioContext | null => {
-    if (ctx) return ctx;
-    const g = globalThis as unknown as { AudioContext?: AudioCtor; webkitAudioContext?: AudioCtor };
-    const Ctor = g.AudioContext ?? g.webkitAudioContext;
-    if (!Ctor) return null;
+/** Один AudioContext на эффекты и музыку: рождается в первом unlock() (жест пользователя). */
+export interface AudioContextProvider {
+  /** Уже созданный контекст или null (до разблокировки звука). */
+  get(): AudioContext | null;
+  /** Создать (один раз) и разбудить контекст. Звать из обработчика жеста. */
+  unlock(): AudioContext | null;
+}
+
+function defaultAudioContext(): AudioContext | null {
+  const g = globalThis as unknown as { AudioContext?: AudioCtor; webkitAudioContext?: AudioCtor };
+  const Ctor = g.AudioContext ?? g.webkitAudioContext;
+  if (!Ctor) return null;
+  try {
+    return new Ctor();
+  } catch {
+    return null;
+  }
+}
+
+export function createAudioContextProvider(factory: () => AudioContext | null = defaultAudioContext): AudioContextProvider {
+  let ctx: AudioContext | null = null;
+  let failed = false;
+  return {
+    get: () => ctx,
+    unlock() {
+      if (!ctx && !failed) {
+        ctx = factory();
+        failed = !ctx;
+      }
+      if (ctx && ctx.state === 'suspended') void ctx.resume().catch(() => undefined);
+      return ctx;
+    },
+  };
+}
+
+export function createSfx(isMuted: () => boolean, audio: AudioContextProvider = createAudioContextProvider()): Sfx {
+  let master: GainNode | null = null;
+  let masterOf: AudioContext | null = null;
+
+  const bus = (c: AudioContext): GainNode | null => {
+    if (masterOf === c && master) return master;
     try {
-      ctx = new Ctor();
-      master = ctx.createGain();
-      master.gain.value = 0.6;
-      master.connect(ctx.destination);
+      master = c.createGain();
+      master.gain.value = SFX_MASTER_GAIN;
+      master.connect(c.destination);
+      masterOf = c;
     } catch {
-      ctx = null;
+      master = null;
     }
-    return ctx;
+    return master;
   };
 
   const unlock = (): void => {
-    const c = ensure();
-    if (c && c.state === 'suspended') void c.resume().catch(() => undefined);
+    const c = audio.unlock();
+    if (c) bus(c);
   };
 
   const play = (name: SfxName): void => {
     if (isMuted()) return;
-    const c = ctx;
-    if (!c || !master) return;
+    const c = audio.get();
+    const out = c ? bus(c) : null;
+    if (!c || !out) return;
     if (c.state === 'suspended') void c.resume().catch(() => undefined);
     const t0 = c.currentTime + 0.01;
     for (const n of PATCHES[name]) {
@@ -113,7 +150,7 @@ export function createSfx(isMuted: () => boolean): Sfx {
         gain.gain.exponentialRampToValueAtTime(v, start + 0.01);
         gain.gain.exponentialRampToValueAtTime(0.0001, end);
         osc.connect(gain);
-        gain.connect(master);
+        gain.connect(out);
         osc.start(start);
         osc.stop(end + 0.02);
       } catch {

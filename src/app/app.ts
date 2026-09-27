@@ -3,7 +3,8 @@
 import { createStore, type Store } from '../core/state';
 import { PUZZLE_IDS, roomOfPuzzle, type KeyValueStorage, type RunResult, type ScreenName, type SubmitOutcome, type EasyQuestGameState, type RoomIndex } from '../core/types';
 import { MAX_TOTAL_COINS, PLAYER_NAME_MAX, PUZZLE_REWARDS, validatePlayerName } from '../core/rules';
-import { createSfx, type Sfx } from '../services/sfx';
+import { createAudioContextProvider, createSfx, type Sfx } from '../services/sfx';
+import { createMusic, type Music } from '../services/music';
 import { createRestClientFromEnv, NetworkError, type RestClient } from '../services/rest';
 import { createCuratorSync } from '../services/curator';
 import { createLeaderboardService, type LeaderboardServiceHandle } from '../services/leaderboard';
@@ -32,6 +33,7 @@ export interface MountAppOptions {
 export interface AppHandle {
   store: Store;
   sfx: Sfx;
+  music: Music;
   bridge: Bridge;
   controller: QuestController;
   curator: CuratorSync;
@@ -106,7 +108,10 @@ export function mountApp(rootEl: HTMLElement, opts: MountAppOptions = {}): AppHa
   const storage = opts.storage !== undefined ? opts.storage : safeLocalStorage();
   const svcWin = opts.win !== undefined ? opts.win : typeof window !== 'undefined' ? window : null;
   const store = createStore({ storage });
-  const sfx = createSfx(() => store.get().navigation.isAudioMuted);
+  // Один AudioContext на эффекты и музыку: рождается по первому жесту (unlock ниже).
+  const audio = createAudioContextProvider();
+  const sfx = createSfx(() => store.get().navigation.isAudioMuted, audio);
+  const music = createMusic(() => store.get().navigation.isMusicMuted, audio);
   const rest = opts.rest ?? createRestClientFromEnv();
   const bridge = opts.bridge ?? createBridge({ extraOrigins: parseExtraOrigins(import.meta.env?.VITE_BRIDGE_EXTRA_ORIGINS) });
   let destroyed = false;
@@ -157,6 +162,7 @@ export function mountApp(rootEl: HTMLElement, opts: MountAppOptions = {}): AppHa
   };
   const unlock = (): void => {
     sfx.unlock();
+    music.unlock();
     offUnlock();
   };
   rootEl.addEventListener('pointerdown', unlock);
@@ -179,6 +185,7 @@ export function mountApp(rootEl: HTMLElement, opts: MountAppOptions = {}): AppHa
     root: rootEl,
     store,
     sfx,
+    music,
     navigate: (screen) => router?.go(screen),
     controller,
     curator,
@@ -262,6 +269,7 @@ export function mountApp(rootEl: HTMLElement, opts: MountAppOptions = {}): AppHa
   return {
     store,
     sfx,
+    music,
     bridge,
     controller,
     curator,
@@ -282,6 +290,7 @@ export function mountApp(rootEl: HTMLElement, opts: MountAppOptions = {}): AppHa
       offTheme();
       unblock();
       offUnlock(); // не будим звук при разборке
+      music.destroy();
       store.destroy();
       host.remove();
     },

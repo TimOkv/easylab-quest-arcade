@@ -6,12 +6,15 @@ import type { Store } from '../core/state';
 import type { LeaderboardService, PublicRow, RunResult, SeasonInfo, Standing, SubmitOutcome } from '../core/types';
 import { PLAYER_NAME_MAX, validatePlayerName } from '../core/rules';
 import type { Sfx } from '../services/sfx';
-import { createMuteButton } from '../app/shell';
+import type { Music } from '../services/music';
+import { createMuteButton, createMusicButton } from '../app/shell';
 import { button, el } from '../core/dom';
 
 export interface LeaderboardScreenDeps {
   store: Store;
   sfx?: Sfx;
+  /** Фоновая музыка: на рейтинге продолжается тема `arcade`, приглушённая. Нет — без музыки и кнопки 🎵. */
+  music?: Music;
   service: LeaderboardService;
   lastRun: { result: RunResult; submit: Promise<SubmitOutcome> } | null;
   onPlayAgain(): void;
@@ -99,6 +102,11 @@ export function mountLeaderboardScreen(host: HTMLElement, deps: LeaderboardScree
   titles.append(title, seasonName);
   head.append(back, titles);
   if (sfx) head.appendChild(createMuteButton(store, sfx));
+  if (deps.music) {
+    head.appendChild(createMusicButton(store));
+    deps.music.duck(true);
+    deps.music.play('arcade');
+  }
 
   const prize = el('div', 'ezq-lb__prize');
   prize.append(

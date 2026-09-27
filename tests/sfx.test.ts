@@ -73,4 +73,24 @@ describe('sfx', () => {
   });
 });
 
+describe('общий звук приложения', () => {
+  it('музыка доступна экранам через ctx.music; первый жест будит один контекст на эффекты и музыку', () => {
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    let seen: unknown = null;
+    const app = mountApp(root, { storage: null, win: null, rest: createRestClient({ url: '', anonKey: '' }), screens: {
+      quest: (_h, ctx) => { seen = ctx.music; return { destroy() {} }; },
+      arcade: () => ({ destroy() {} }), leaderboard: () => ({ destroy() {} }),
+    } });
+    expect(seen).toBe(app.music);
+    app.music.play('quest');
+    expect(FakeAudioContext.made).toBe(0);
+    root.dispatchEvent(new Event('pointerdown'));
+    expect(FakeAudioContext.made).toBe(1);
+    app.sfx.play('coin');
+    expect(FakeAudioContext.made).toBe(1);
+    app.destroy();
+  });
+});
+
 afterAll(() => { g.AudioContext = saved; });

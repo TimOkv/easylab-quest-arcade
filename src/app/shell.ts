@@ -1,4 +1,4 @@
-// Утилиты оболочки для экранов: масштаб сцены, копирование, кнопка звука, тосты, блокировка жестов.
+// Утилиты оболочки для экранов: масштаб сцены, копирование, кнопки звука и музыки, тосты, блокировка жестов.
 import type { Store } from '../core/state';
 import type { Sfx } from '../services/sfx';
 
@@ -91,20 +91,10 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
-// ---------------------------------------------------------------- createMuteButton
+// ---------------------------------------------------------------- createMuteButton / createMusicButton
 
-/** Кнопка 🔊/🔇: переключает `navigation.isAudioMuted` (сохраняется в store). */
-export function createMuteButton(store: Store, sfx: Sfx): HTMLButtonElement {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'ezq-btn ezq-btn--icon ezq-mute';
-  const render = (): void => {
-    const muted = store.get().navigation.isAudioMuted;
-    btn.textContent = muted ? '🔇' : '🔊';
-    btn.setAttribute('aria-label', muted ? 'Включить звук' : 'Выключить звук');
-    btn.setAttribute('aria-pressed', String(muted));
-    btn.title = muted ? 'Звук выключен' : 'Звук включён';
-  };
+/** Перерисовывать кнопку при изменениях store, пока она в документе; после удаления — отписаться. */
+function followStore(btn: HTMLElement, store: Store, render: () => void): void {
   render();
   let seenConnected = false;
   const off = store.subscribe(() => {
@@ -115,12 +105,69 @@ export function createMuteButton(store: Store, sfx: Sfx): HTMLButtonElement {
     }
     render();
   });
+}
+
+/** Кнопка 🔊/🔇: переключает `navigation.isAudioMuted` (только эффекты; сохраняется в store). */
+export function createMuteButton(store: Store, sfx: Sfx): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'ezq-btn ezq-btn--icon ezq-mute';
+  followStore(btn, store, () => {
+    const muted = store.get().navigation.isAudioMuted;
+    btn.textContent = muted ? '🔇' : '🔊';
+    btn.setAttribute('aria-label', muted ? 'Включить звук' : 'Выключить звук');
+    btn.setAttribute('aria-pressed', String(muted));
+    btn.title = muted ? 'Звук выключен' : 'Звук включён';
+  });
   btn.addEventListener('click', () => {
     sfx.unlock();
     store.update((s) => {
       s.navigation.isAudioMuted = !s.navigation.isAudioMuted;
     });
     sfx.play('click');
+  });
+  return btn;
+}
+
+/**
+ * Кнопка 🎵: переключает `navigation.isMusicMuted` (только музыку; сохраняется в store, общая для экранов).
+ * Выключенная — перечёркнута. Черта — inline-стилями, чтобы кнопка не зависела от CSS конкретного экрана.
+ */
+export function createMusicButton(store: Store): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'ezq-btn ezq-btn--icon ezq-music';
+  btn.style.position = 'relative';
+  const icon = document.createElement('span');
+  icon.textContent = '🎵';
+  icon.setAttribute('aria-hidden', 'true');
+  const slash = document.createElement('span');
+  slash.setAttribute('aria-hidden', 'true');
+  Object.assign(slash.style, {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: '34px',
+    height: '4px',
+    borderRadius: '2px',
+    background: '#ff5a5a',
+    boxShadow: '0 0 0 1px rgba(0, 0, 0, 0.45)',
+    transform: 'translate(-50%, -50%) rotate(-45deg)',
+    pointerEvents: 'none',
+  });
+  btn.append(icon, slash);
+  followStore(btn, store, () => {
+    const muted = store.get().navigation.isMusicMuted;
+    slash.hidden = !muted;
+    icon.style.opacity = muted ? '0.6' : '';
+    btn.setAttribute('aria-label', muted ? 'Включить музыку' : 'Выключить музыку');
+    btn.setAttribute('aria-pressed', String(muted));
+    btn.title = muted ? 'Музыка выключена' : 'Музыка включена';
+  });
+  btn.addEventListener('click', () => {
+    store.update((s) => {
+      s.navigation.isMusicMuted = !s.navigation.isMusicMuted;
+    });
   });
   return btn;
 }

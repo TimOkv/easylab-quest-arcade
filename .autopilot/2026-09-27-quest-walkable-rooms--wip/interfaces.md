@@ -69,3 +69,12 @@ export const PUZZLES_BY_ROOM: Record<RoomIndex, readonly [PuzzleId, PuzzleId]>;
 - Куратор: `BAD_COINS` — без повторов, `quest.lastSyncError = 'BAD_COINS'` (текст на экране — таск 05); `coins_max` читается из ответов restore/register (нет поля → 75 при монетах ≤ 75, иначе 150).
 - `src/quest/screen.ts` адаптирован минимально (старые тексты STORY) — переписывается в 05.
 - e2e: общий помощник прохождения — `tests/e2e/support/flow.ts`.
+
+### Из таска 03 — 8-бит музыка и кнопка 🎵
+
+- `services/music`: `createMusic(isMuted: () => boolean, audio?: AudioContextProvider) → Music`; `Music = { play(theme: MusicTheme), stop(), duck(on: boolean), unlock(), destroy() }`; `MusicTheme = 'quest' | 'arcade'`; `themeLoopSeconds(theme)`; `MUSIC_LEVEL`, `DUCK_LEVEL`, `FADE_S`. Выключение подхватывается опросом `isMuted()` (≤ 25 мс).
+- `services/sfx`: `AudioContextProvider = { get(), unlock() }`, `createAudioContextProvider(factory?)`, `createSfx(isMuted, audio?)` — один AudioContext на sfx и музыку.
+- `app/shell`: `createMusicButton(store)` — `.ezq-music`, `aria-pressed`, «Выключить/Включить музыку»; ставится рядом с 🔊.
+- `AppContext.music: Music`; первый жест в корне приложения разблокирует sfx и музыку.
+- Аркада: `duck(false)` + `play('arcade')`; рейтинг: `duck(true)` + `play('arcade')`.
+- **Для таска 05:** экран квеста зовёт `ctx.music.duck(false)` + `play('quest')`, при открытой панели загадки — `duck(true)`; кнопку 🎵 ставит в HUD квеста сам.

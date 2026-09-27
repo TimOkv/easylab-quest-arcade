@@ -2,10 +2,11 @@
 // пауза, тач-зоны. При game over сам пишет arcade.* в store и зовёт onGameOver(result).
 
 import './arcade.css';
-import { copyText, createMuteButton, fitStage, showToast } from '../app/shell';
+import { copyText, createMuteButton, createMusicButton, fitStage, showToast } from '../app/shell';
 import type { Store } from '../core/state';
 import type { RunResult } from '../core/types';
 import type { Sfx } from '../services/sfx';
+import type { Music } from '../services/music';
 import { VIEW_H, VIEW_W, type InputState, type World } from './engine';
 import { createArcadeGame, getSprites, type ArcadeGame } from './game';
 import { createArcadeInput, type Side } from './input';
@@ -15,6 +16,8 @@ import { button, el } from '../core/dom';
 export interface ArcadeScreenDeps {
   store: Store;
   sfx: Sfx;
+  /** Фоновая 8-бит музыка: экран включает тему `arcade` в полную громкость. Нет — без музыки и кнопки 🎵. */
+  music?: Music;
   onGameOver(result: RunResult): void;
   onOpenLeaderboard(): void;
   /**
@@ -68,6 +71,7 @@ export function mountArcadeScreen(host: HTMLElement, deps: ArcadeScreenDeps): { 
   pauseBtn.setAttribute('aria-label', 'Пауза');
   const muteBtn = createMuteButton(store, sfx);
   hud.append(pauseBtn, muteBtn);
+  if (deps.music) hud.append(createMusicButton(store));
 
   // --- карточка профиля
   const card = el('div', 'ezq-arcade__card');
@@ -240,6 +244,9 @@ export function mountArcadeScreen(host: HTMLElement, deps: ArcadeScreenDeps): { 
   window.addEventListener('blur', onBlur);
   const offStore = store.subscribe(() => renderProfile());
   deps.dailyLimit?.refresh().then(() => renderProfile(), () => undefined);
+
+  deps.music?.duck(false);
+  deps.music?.play('arcade'); // та же тема уже играет (пришли с рейтинга) — не перезапускается
 
   renderProfile();
   setMode('idle');
