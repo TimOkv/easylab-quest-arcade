@@ -37,7 +37,8 @@ export type SubmitOutcome =
     }
   | { kind: 'queued' } // сеть — лежит в pending_scores
   | { kind: 'rejected'; reason: RejectReason }
-  | { kind: 'demo' }; // сервер не настроен
+  | { kind: 'demo' } // сервер не настроен
+  | { kind: 'error' }; // сбой клиента (не сеть) — забег не отправлен, ошибка в консоли
 
 export interface PublicRow {
   playerName: string;

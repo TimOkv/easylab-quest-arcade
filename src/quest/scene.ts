@@ -3,7 +3,7 @@
 // исходной картинки 1586×992 и пересчитываются в координаты сцены (object-fit: cover).
 import roomUrl from '../assets/room.jpg';
 import type { RoomIndex } from '../core/types';
-import { el } from './puzzle-ui';
+import { el } from '../core/dom';
 
 export const STAGE_W = 1600;
 export const STAGE_H = 900;

@@ -1,4 +1,5 @@
-// 8-бит эффекты на WebAudio-синтезе (0 байт аудиофайлов). AudioContext — по первому жесту.
+// 8-бит эффекты на WebAudio-синтезе (0 байт аудиофайлов). AudioContext создаётся только в unlock()
+// (из обработчика жеста — политика автоплея); play() до разблокировки — тихий no-op.
 
 export type SfxName =
   | 'click'
@@ -94,7 +95,7 @@ export function createSfx(isMuted: () => boolean): Sfx {
 
   const play = (name: SfxName): void => {
     if (isMuted()) return;
-    const c = ensure();
+    const c = ctx;
     if (!c || !master) return;
     if (c.state === 'suspended') void c.resume().catch(() => undefined);
     const t0 = c.currentTime + 0.01;

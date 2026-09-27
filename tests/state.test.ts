@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createInitialState, createStore, loadState, SAVE_KEY, CORRUPT_KEY } from '../src/core/state';
+import { createInitialState, createStore, loadState, newUuid, SAVE_KEY, CORRUPT_KEY } from '../src/core/state';
+import { newRunId } from '../src/arcade/game';
 import type { KeyValueStorage } from '../src/core/types';
 
 class FakeStorage implements KeyValueStorage {
@@ -174,5 +175,18 @@ describe('createStore — сохранение ezq_save_v1', () => {
     expect(loadState(storage)?.quest.isCompleted).toBe(true);
     expect(stale.get().quest.verificationCode).toBe('EZ-8492');
     expect(stale.get().navigation.isAudioMuted).toBe(true);
+  });
+});
+
+describe('newUuid — единственный генератор UUID v4', () => {
+  const V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  it('без randomUUID (не-secure контекст) — v4 из getRandomValues', () => {
+    const fill = (a: Uint8Array) => { a.fill(0xff); return a; };
+    expect(newUuid({ getRandomValues: fill as never })).toBe('ffffffff-ffff-4fff-bfff-ffffffffffff');
+  });
+  it('сессия нового сохранения и id забега — UUID v4 из того же генератора', () => {
+    expect(newUuid()).toMatch(V4);
+    expect(createStore({ storage: null }).get().meta.sessionId).toMatch(V4);
+    expect(newRunId).toBe(newUuid);
   });
 });

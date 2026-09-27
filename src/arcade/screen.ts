@@ -10,6 +10,7 @@ import { VIEW_H, VIEW_W, type InputState, type World } from './engine';
 import { createArcadeGame, getSprites, type ArcadeGame } from './game';
 import { createArcadeInput, type Side } from './input';
 import { drawCoinIcon } from './sprites';
+import { button, el } from '../core/dom';
 
 export interface ArcadeScreenDeps {
   store: Store;
@@ -45,20 +46,6 @@ export function recordRun(store: Store, r: RunResult, now: number): void {
   });
 }
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text?: string): HTMLElementTagNameMap[K] {
-  const e = document.createElement(tag);
-  e.className = cls;
-  if (text !== undefined) e.textContent = text;
-  return e;
-}
-
-function button(cls: string, text: string, onClick: () => void): HTMLButtonElement {
-  const b = el('button', `ezq-btn ${cls}`, text);
-  b.type = 'button';
-  b.addEventListener('click', onClick);
-  return b;
-}
-
 export function mountArcadeScreen(host: HTMLElement, deps: ArcadeScreenDeps): { destroy(): void } {
   const { store, sfx } = deps;
   const root = el('div', 'ezq-screen ezq-arcade');
@@ -77,7 +64,7 @@ export function mountArcadeScreen(host: HTMLElement, deps: ArcadeScreenDeps): { 
 
   // --- HUD
   const hud = el('div', 'ezq-arcade__hud');
-  const pauseBtn = button('ezq-btn--icon ezq-arcade__pause-btn', '⏸', () => togglePause());
+  const pauseBtn = button('ezq-btn ezq-btn--icon ezq-arcade__pause-btn', '⏸', () => togglePause());
   pauseBtn.setAttribute('aria-label', 'Пауза');
   const muteBtn = createMuteButton(store, sfx);
   hud.append(pauseBtn, muteBtn);
@@ -94,7 +81,7 @@ export function mountArcadeScreen(host: HTMLElement, deps: ArcadeScreenDeps): { 
   const codeRow = el('div', 'ezq-arcade__row');
   const codeLabel = el('span', 'ezq-arcade__label', 'Твой ID');
   const codeVal = el('span', 'ezq-arcade__code');
-  const copyBtn = button('ezq-arcade__copy', 'Скопировать', () => void onCopy());
+  const copyBtn = button('ezq-btn ezq-arcade__copy', 'Скопировать', () => void onCopy());
   codeRow.append(codeLabel, codeVal, copyBtn);
   const coinsRow = el('div', 'ezq-arcade__row ezq-arcade__coins');
   const coinIcon = el('canvas', 'ezq-arcade__coin');
@@ -108,8 +95,8 @@ export function mountArcadeScreen(host: HTMLElement, deps: ArcadeScreenDeps): { 
   const dailyVal = el('div', 'ezq-arcade__record ezq-arcade__daily');
   profile.append(nameRow, codeRow, coinsRow, recordVal);
   const actions = el('div', 'ezq-arcade__actions');
-  const playBtn = button('ezq-arcade__play', '▶ Играть', () => startRun());
-  const boardBtn = button('ezq-arcade__board', '🏆 Рейтинг', () => {
+  const playBtn = button('ezq-btn ezq-arcade__play', '▶ Играть', () => startRun());
+  const boardBtn = button('ezq-btn ezq-arcade__board', '🏆 Рейтинг', () => {
     sfx.play('click');
     deps.onOpenLeaderboard();
   });
@@ -122,13 +109,13 @@ export function mountArcadeScreen(host: HTMLElement, deps: ArcadeScreenDeps): { 
   const pauseBox = el('div', 'ezq-arcade__pausebox');
   pauseBox.append(
     el('div', 'ezq-arcade__title', 'Пауза'),
-    button('ezq-arcade__play', '▶ Продолжить', () => setPaused(false)),
+    button('ezq-btn ezq-arcade__play', '▶ Продолжить', () => setPaused(false)),
     el('div', 'ezq-arcade__help', 'Esc или P — пауза'),
   );
   pauseLayer.append(pauseBox);
 
   stage.append(canvas, zoneL, zoneR, arrows, hud, card, pauseLayer);
-  viewport.append(stage);
+  viewport.append(el('div', 'ezq-arcade__pad'), stage);
   root.append(viewport);
   host.appendChild(root);
 

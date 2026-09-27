@@ -162,10 +162,22 @@ export interface CreateStoreOptions {
   newSessionId?: () => string;
 }
 
-function defaultSessionId(): string {
-  const c = globalThis.crypto;
+export type UuidCrypto = { randomUUID?: () => string; getRandomValues?(a: Uint8Array<ArrayBuffer>): unknown };
+
+/** UUID v4 — единственный генератор проекта (сессия, id забега): randomUUID, а без него (не-secure контекст) — из getRandomValues по RFC 4122. */
+export function newUuid(c: UuidCrypto | undefined = globalThis.crypto): string {
   if (c && typeof c.randomUUID === 'function') return c.randomUUID();
-  return `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const b = new Uint8Array(16);
+  if (c && typeof c.getRandomValues === 'function') c.getRandomValues(b);
+  else for (let i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256);
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  let h = '';
+  for (let i = 0; i < 16; i++) {
+    h += b[i].toString(16).padStart(2, '0');
+    if (i === 3 || i === 5 || i === 7 || i === 9) h += '-';
+  }
+  return h;
 }
 
 function deepFreeze<T>(v: T): T {
@@ -191,7 +203,7 @@ export function createStore(opts: CreateStoreOptions): Store {
       storage = null; // приватный режим / заблокировано → память
     }
   }
-  let state = deepFreeze(loaded ?? createInitialState(now(), (opts.newSessionId ?? defaultSessionId)()));
+  let state = deepFreeze(loaded ?? createInitialState(now(), (opts.newSessionId ?? newUuid)()));
 
   const persist = (): void => {
     if (!storage) return;

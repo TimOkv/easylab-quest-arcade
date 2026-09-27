@@ -2,9 +2,9 @@
 // и проводка сервисов: реестр куратора (с повторами), рейтинг (с очередью), мост EasyLab, G03.
 import { createStore, type Store } from '../core/state';
 import type { KeyValueStorage, RunResult, ScreenName, SubmitOutcome, EasyQuestGameState, RoomIndex } from '../core/types';
-import { validatePlayerName } from '../core/rules';
+import { MAX_TOTAL_COINS, PLAYER_NAME_MAX, validatePlayerName } from '../core/rules';
 import { createSfx, type Sfx } from '../services/sfx';
-import { createRestClientFromEnv, type RestClient } from '../services/rest';
+import { createRestClientFromEnv, NetworkError, type RestClient } from '../services/rest';
 import { createCuratorSync } from '../services/curator';
 import { createLeaderboardService, type LeaderboardServiceHandle } from '../services/leaderboard';
 import { createBridge, parseExtraOrigins, type AuthInit, type Bridge, type QuestCompletedPayload } from '../services/bridge';
@@ -53,14 +53,15 @@ function safeLocalStorage(): Storage | null {
 
 const ROOMS: readonly RoomIndex[] = [1, 2, 3, 4];
 
-/** Полезная нагрузка EASYLAB_QUEST_COMPLETED из состояния. */
-export function questCompletedPayload(s: EasyQuestGameState): QuestCompletedPayload {
+/** Полезная нагрузка EASYLAB_QUEST_COMPLETED из состояния; null — квест не завершён (нет кода или даты). */
+export function questCompletedPayload(s: EasyQuestGameState): QuestCompletedPayload | null {
   const q = s.quest;
+  if (!q.isCompleted || !q.verificationCode || q.completedAt === null) return null;
   return {
     coinsEarned: q.totalCoinsEarned,
-    maxCoins: 75,
-    verificationCode: q.verificationCode ?? '',
-    completedAt: new Date(q.completedAt ?? Date.now()).toISOString(),
+    maxCoins: MAX_TOTAL_COINS,
+    verificationCode: q.verificationCode,
+    completedAt: new Date(q.completedAt).toISOString(),
     studentId: s.meta.platformStudentId,
     rooms: ROOMS.map((room) => {
       const r = q.rooms[room];
@@ -115,20 +116,25 @@ export function mountApp(rootEl: HTMLElement, opts: MountAppOptions = {}): AppHa
     if (s.meta.theme !== prev.meta.theme) applyTheme();
   });
 
+  const sendQuestCompleted = (s: EasyQuestGameState): void => {
+    const payload = questCompletedPayload(s);
+    if (payload) bridge.sendQuestCompleted(payload);
+  };
+
   // ---- сервисы
   const curator = createCuratorSync(rest, store, {
     win: svcWin,
     onCodeChanged: (code) => {
       if (destroyed || !store.get().quest.isCompleted) return;
       showToast(`Код обновлён: ${code}`);
-      bridge.sendQuestCompleted(questCompletedPayload(store.get()));
+      sendQuestCompleted(store.get());
     },
   });
   const leaderboard = createLeaderboardService(rest, store, storage, { win: svcWin, curator });
   const controller = createQuestController(store, {
     onCompleted: (s) => {
-      void curator.syncNow().catch(() => undefined);
-      bridge.sendQuestCompleted(questCompletedPayload(s));
+      void curator.syncNow().catch((e: unknown) => console.error('[ezq] curator sync', e));
+      sendQuestCompleted(s);
     },
   });
   const stopCuratorLoop = curator.startRetryLoop();
@@ -137,10 +143,13 @@ export function mountApp(rootEl: HTMLElement, opts: MountAppOptions = {}): AppHa
   const unblock = blockGestures(rootEl);
 
   // AudioContext создаётся по первому жесту пользователя (политика автоплея).
-  const unlock = (): void => {
-    sfx.unlock();
+  const offUnlock = (): void => {
     rootEl.removeEventListener('pointerdown', unlock);
     rootEl.removeEventListener('keydown', unlock);
+  };
+  const unlock = (): void => {
+    sfx.unlock();
+    offUnlock();
   };
   rootEl.addEventListener('pointerdown', unlock);
   rootEl.addEventListener('keydown', unlock);
@@ -172,7 +181,11 @@ export function mountApp(rootEl: HTMLElement, opts: MountAppOptions = {}): AppHa
     lastRun: null,
     autoStart: false,
     onGameOver: (result: RunResult) => {
-      const submit: Promise<SubmitOutcome> = leaderboard.submitRun(result).catch((): SubmitOutcome => ({ kind: 'queued' }));
+      const submit: Promise<SubmitOutcome> = leaderboard.submitRun(result).catch((e: unknown): SubmitOutcome => {
+        if (e instanceof NetworkError) return { kind: 'queued' };
+        console.error('[ezq] submitRun', e);
+        return { kind: 'error' };
+      });
       ctx.lastRun = { result, submit };
       void submit.then((o) => {
         if (o.kind === 'counted') dailyFresh = true;
@@ -212,7 +225,7 @@ export function mountApp(rootEl: HTMLElement, opts: MountAppOptions = {}): AppHa
       if (a.studentId) d.meta.platformStudentId = a.studentId;
       if (a.theme) d.meta.theme = a.theme;
       if (a.name && !d.quest.isCompleted && !d.leaderboard.playerName) {
-        const v = validatePlayerName(a.name.slice(0, 16).trim());
+        const v = validatePlayerName(a.name.slice(0, PLAYER_NAME_MAX).trim());
         if (v.ok) d.leaderboard.playerName = v.value;
       }
     });
@@ -260,7 +273,7 @@ export function mountApp(rootEl: HTMLElement, opts: MountAppOptions = {}): AppHa
       loading?.remove();
       offTheme();
       unblock();
-      unlock();
+      offUnlock(); // не будим звук при разборке
       store.destroy();
       host.remove();
     },

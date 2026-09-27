@@ -1,7 +1,8 @@
 // Содержимое и проверка четырёх загадок квеста (Решения §4). `check` — чистая функция без DOM;
 // `render` строит разметку панели только при вызове.
 import type { RoomIndex } from '../core/types';
-import { createSlotBoard, createTokenLine, el } from './puzzle-ui';
+import { createSlotBoard, createTokenLine } from './puzzle-ui';
+import { el } from '../core/dom';
 
 export interface CheckResult {
   correct: boolean;

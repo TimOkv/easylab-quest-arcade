@@ -146,6 +146,53 @@ describe('leaderboard/screen', () => {
     expect(f.calls.flush).toBe(1);
     expect(host.querySelector('.ezq-lb__dialog')).toBeNull();
   });
+  it('смена ника при упавшей отправке: карточка не зависает на «Отправляем…», есть «Повторить»', async () => {
+    let fail = true;
+    const f = fakeService({ top: rows(3), flush: () => { if (fail) throw new Error('flush failed'); } });
+    const { host, store } = await mount(f.svc, { result: RUN, submit: Promise.resolve({ kind: 'rejected', reason: 'BAD_NAME' }) });
+    const dialog = host.querySelector('.ezq-lb__dialog')!;
+    dialog.querySelector('input')!.value = 'Котлета';
+    dialog.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await tick();
+    await tick();
+    const outcome = host.querySelector('.ezq-lb__outcome')!;
+    expect(text(outcome)).not.toContain('Отправляем');
+    expect(outcome.className).toContain('ezq-lb__outcome--wait');
+    const retry = outcome.querySelector('button');
+    expect(text(retry)).toBe('Повторить');
+    // повтор: очередь уходит, забег засчитан
+    fail = false;
+    store.update((d) => { d.arcade.lastRun = { runId: RUN.runId, score: 1500, durationSeconds: 75, jumpsCount: 88, timestamp: 1, seed: 1, countedScore: 1500 } as never; });
+    retry!.click();
+    await tick();
+    await tick();
+    expect(f.calls.flush).toBe(2);
+    expect(text(host.querySelector('.ezq-lb__outcome'))).toContain('+1 500 в рейтинг сезона');
+  });
+
+  it('«Повторить», нажатое дважды, пока идёт отправка, запускает только одну отправку', async () => {
+    let mode: 'fail' | 'hang' = 'fail';
+    const calls = { flush: 0 };
+    const f = fakeService({ top: rows(3) });
+    f.svc.flushQueue = () => {
+      calls.flush++;
+      return mode === 'fail' ? Promise.reject(new Error('flush failed')) : new Promise<void>(() => {});
+    };
+    const { host } = await mount(f.svc, { result: RUN, submit: Promise.resolve({ kind: 'rejected', reason: 'BAD_NAME' }) });
+    const dialog = host.querySelector('.ezq-lb__dialog')!;
+    dialog.querySelector('input')!.value = 'Котлета';
+    dialog.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await tick();
+    await tick();
+    const retry = host.querySelector<HTMLButtonElement>('.ezq-lb__outcome button')!;
+    mode = 'hang';
+    retry.click();
+    retry.click();
+    await tick();
+    expect(calls.flush).toBe(2); // первая (упавшая) + один повтор
+    expect(text(host.querySelector('.ezq-lb__outcome'))).toContain('Отправляем');
+  });
+
   it('ничья: подсвечивается ровно своя строка (ник + очки), чужая с тем же рангом — нет', async () => {
     const top: PublicRow[] = [
       { playerName: 'Космокот', score: 5000, createdAt: '', runsCount: 1 },

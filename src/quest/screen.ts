@@ -7,7 +7,7 @@ import type { Sfx } from '../services/sfx';
 import { copyText, createMuteButton, fitStage, showToast } from '../app/shell';
 import type { QuestController } from './controller';
 import { PUZZLES, type PuzzleView } from './puzzles';
-import { el } from './puzzle-ui';
+import { button, el } from '../core/dom';
 import { createScene, onHotspot, STAGE_H, STAGE_W } from './scene';
 import { coinIcon, confetti, countUp, flyCoins } from './effects';
 
@@ -29,12 +29,6 @@ const STORY: Record<RoomIndex, { place: string; find: string; done: string }> = 
   3: { place: 'Библиотека знаний', find: 'Нажми на книгу на столе', done: 'Шкаф отъехал — за ним потайная дверь к котику!' },
   4: { place: 'Командный центр маскота', find: 'Нажми на котика', done: 'Миссия запущена! Главный экран загорелся.' },
 };
-
-function button(className: string, text: string): HTMLButtonElement {
-  const b = el('button', className, text);
-  b.type = 'button';
-  return b;
-}
 
 function catBubble(lines: string[]): HTMLElement {
   const wrap = el('div', 'ezq-cat');

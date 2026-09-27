@@ -19,6 +19,7 @@ import {
 } from './engine';
 import { renderWorld, type RenderExtras } from './render';
 import { buildSprites, type SpriteSet } from './sprites';
+import { newUuid } from '../core/state';
 
 export interface ArcadeGameOptions {
   highScore: number;
@@ -60,23 +61,8 @@ export function newRunSeed(): number {
   return Math.floor(Math.random() * 4294967296) >>> 0;
 }
 
-type RunIdCrypto = { randomUUID?: () => string; getRandomValues?(a: Uint8Array<ArrayBuffer>): unknown };
-
-/** UUID v4 забега: randomUUID, а без него (не-secure контекст) — из getRandomValues по RFC 4122. */
-export function newRunId(c: RunIdCrypto | undefined = globalThis.crypto): string {
-  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
-  const b = new Uint8Array(16);
-  if (c && typeof c.getRandomValues === 'function') c.getRandomValues(b);
-  else for (let i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256);
-  b[6] = (b[6] & 0x0f) | 0x40;
-  b[8] = (b[8] & 0x3f) | 0x80;
-  let h = '';
-  for (let i = 0; i < 16; i++) {
-    h += b[i].toString(16).padStart(2, '0');
-    if (i === 3 || i === 5 || i === 7 || i === 9) h += '-';
-  }
-  return h;
-}
+/** UUID v4 забега — общий генератор `core/state` (randomUUID или getRandomValues по RFC 4122). */
+export const newRunId = newUuid;
 
 let sharedSprites: SpriteSet | null = null;
 export function getSprites(): SpriteSet {

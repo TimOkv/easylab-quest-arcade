@@ -2,7 +2,7 @@
 // перевыпуск кода при CODE_TAKEN, восстановление по student_id (G03).
 import type { CuratorSync, RoomIndex } from '../core/types';
 import type { Store } from '../core/state';
-import { generateVerificationCode } from '../core/rules';
+import { generateVerificationCode, isValidVerificationCode } from '../core/rules';
 import { NetworkError, RpcError, type RestClient } from './rest';
 
 export interface CuratorSyncOptions {
@@ -34,10 +34,18 @@ export const RETRY_BASE_MS = 30_000;
 export const RETRY_MAX_MS = 5 * 60_000;
 
 const ROOMS: readonly RoomIndex[] = [1, 2, 3, 4];
+/** Отказы, которые повтор с теми же данными не исправит: ждём смены ника/монет. */
+const FATAL = new Set(['BAD_NAME', 'BAD_COINS']);
 
 export function createCuratorSync(rest: RestClient, store: Store, opts: CuratorSyncOptions = {}): CuratorSync {
   const isConfigured = rest.isConfigured;
   let inFlight: Promise<'synced' | 'pending' | 'demo'> | null = null;
+  /** Данные, которые сервер отверг безнадёжно; с ними RPC не повторяем. */
+  let rejectedKey: string | null = null;
+  const keyOf = (): string => {
+    const s = store.get();
+    return JSON.stringify([s.quest.verificationCode, s.leaderboard.playerName, s.quest.totalCoinsEarned, s.meta.platformStudentId]);
+  };
 
   const setCode = (code: string): void => {
     if (store.get().quest.verificationCode === code) return;
@@ -60,6 +68,7 @@ export function createCuratorSync(rest: RestClient, store: Store, opts: CuratorS
       const q = s.quest;
       if (q.isSyncedWithCurator) return 'synced';
       if (!q.isCompleted || !q.verificationCode) return 'pending';
+      if (rejectedKey === keyOf()) return 'pending';
       try {
         const r = await rest.rpc<RegisterResponse>('register_quest_completion', {
           p_code: q.verificationCode,
@@ -68,7 +77,8 @@ export function createCuratorSync(rest: RestClient, store: Store, opts: CuratorS
           p_coins: q.totalCoinsEarned,
           p_completed_at: new Date(q.completedAt ?? Date.now()).toISOString(),
         });
-        if (r?.restored) setCode(r.verification_code);
+        // Сервер может выдать другой код: запись этого ученика (restored) или замена занятого кода.
+        if (r?.verification_code && isValidVerificationCode(r.verification_code)) setCode(r.verification_code);
         store.update((d) => {
           if (r?.restored) {
             d.quest.totalCoinsEarned = r.coins_earned;
@@ -87,6 +97,7 @@ export function createCuratorSync(rest: RestClient, store: Store, opts: CuratorS
           setCode(next);
           continue;
         }
+        if (e instanceof RpcError && FATAL.has(e.code)) rejectedKey = keyOf();
         return fail(e instanceof RpcError ? e.code : e instanceof NetworkError ? 'NETWORK' : 'UNKNOWN');
       }
     }
@@ -150,7 +161,9 @@ export function createCuratorSync(rest: RestClient, store: Store, opts: CuratorS
       schedule(0);
     };
     const off = store.subscribe((s, prev) => {
-      if (s.quest.isCompleted && !prev.quest.isCompleted && !s.quest.isSyncedWithCurator) onOnline();
+      if (s.quest.isSyncedWithCurator || !s.quest.isCompleted) return;
+      // финиш квеста или смена ника после безнадёжного отказа — пробуем сразу
+      if (!prev.quest.isCompleted || (rejectedKey && s.leaderboard.playerName !== prev.leaderboard.playerName)) onOnline();
     });
 
     if (isConfigured) {

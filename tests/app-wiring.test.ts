@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 // Проводка приложения: квест → триумф → аркада → рейтинг с фейковыми сервисами и фейковым родителем.
-import { describe, it, expect, afterEach } from 'vitest';
-import { mountApp, type AppHandle } from '../src/app/app';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { outcomeText } from '../src/leaderboard/screen';
+import { mountApp, questCompletedPayload, type AppHandle } from '../src/app/app';
+import { NetworkError } from '../src/services/rest';
 import type { AppContext } from '../src/app/screens';
 import { createBridge, type BridgeWindow } from '../src/services/bridge';
 import { createInitialState, SAVE_KEY } from '../src/core/state';
@@ -203,5 +205,47 @@ describe('app wiring', () => {
     await tick();
     await tick();
     expect(text()).toContain('Сегодня в рейтинг: 0 / 3 000');
+  });
+});
+
+describe('questCompletedPayload', () => {
+  it('незавершённый квест или квест без кода → null (нечего слать платформе)', () => {
+    const s = createInitialState(1_700_000_000_000, 'sess');
+    expect(questCompletedPayload(s)).toBeNull();
+    const noCode = { ...s, quest: { ...s.quest, isCompleted: true, completedAt: 1_700_000_000_000, verificationCode: null } };
+    expect(questCompletedPayload(noCode)).toBeNull();
+    const noDate = { ...s, quest: { ...s.quest, isCompleted: true, completedAt: null, verificationCode: 'EZ-AB2C' } };
+    expect(questCompletedPayload(noDate)).toBeNull();
+    const done = { ...s, quest: { ...s.quest, isCompleted: true, completedAt: 1_700_000_000_000, verificationCode: 'EZ-AB2C', totalCoinsEarned: 61 } };
+    expect(questCompletedPayload(done)).toMatchObject({ coinsEarned: 61, maxCoins: 75, verificationCode: 'EZ-AB2C', completedAt: new Date(1_700_000_000_000).toISOString() });
+  });
+});
+
+describe('ctx.onGameOver — ошибки отправки забега', () => {
+  const run: RunResult = { runId: '0b7f3a52-4c1e-4a8e-9d2b-6f1c3e5a7b90', score: 900, durationSeconds: 40, jumpsCount: 55, seed: 7, heightPx: 9000, isNewRecord: false };
+
+  it('NetworkError → «ждёт интернета» (queued), без console.error', async () => {
+    const t = mount({});
+    await t.app.ready;
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    t.app.leaderboard.submitRun = async () => { throw new NetworkError('offline'); };
+    t.last()!.ctx.onGameOver(run);
+    await expect(t.last()!.ctx.lastRun!.submit).resolves.toEqual({ kind: 'queued' });
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('любая другая ошибка → console.error и исход, отличимый от офлайна', async () => {
+    const t = mount({});
+    await t.app.ready;
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const bug = new TypeError('x is undefined');
+    t.app.leaderboard.submitRun = async () => { throw bug; };
+    t.last()!.ctx.onGameOver(run);
+    const o = await t.last()!.ctx.lastRun!.submit;
+    expect(o.kind).toBe('error');
+    expect(spy).toHaveBeenCalledWith(expect.anything(), bug);
+    expect(outcomeText(o, run)).not.toBe(outcomeText({ kind: 'queued' }, run));
+    spy.mockRestore();
   });
 });

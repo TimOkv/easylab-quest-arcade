@@ -1,18 +1,6 @@
 // Общие кирпичики панелей загадок: «тап по карточке → тап по месту» и строка из токенов.
 // Всё — нативные <button>: мышь, тач и клавиатура (Enter/Space) работают одинаково.
-
-export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
-
-function button(className: string, text: string): HTMLButtonElement {
-  const b = el('button', className, text);
-  b.type = 'button';
-  return b;
-}
+import { button, el } from '../core/dom';
 
 export interface Card {
   id: string;

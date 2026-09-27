@@ -7,6 +7,7 @@ import type { LeaderboardService, PublicRow, RunResult, SeasonInfo, Standing, Su
 import { PLAYER_NAME_MAX, validatePlayerName } from '../core/rules';
 import type { Sfx } from '../services/sfx';
 import { createMuteButton } from '../app/shell';
+import { button, el } from '../core/dom';
 
 export interface LeaderboardScreenDeps {
   store: Store;
@@ -27,20 +28,6 @@ const PRIZES: Record<number, { badge: string; mod: string; tag: string }> = {
 const nf = new Intl.NumberFormat('ru-RU');
 const fmt = (n: number): string => nf.format(Math.round(n));
 const pad = (n: number): string => String(n).padStart(2, '0');
-
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text?: string): HTMLElementTagNameMap[K] {
-  const e = document.createElement(tag);
-  e.className = cls;
-  if (text !== undefined) e.textContent = text;
-  return e;
-}
-
-function btn(cls: string, text: string, onClick: () => void): HTMLButtonElement {
-  const b = el('button', `ezq-btn ${cls}`, text);
-  b.type = 'button';
-  b.addEventListener('click', onClick);
-  return b;
-}
 
 /** «5 д 03 ч» / «4 ч 07 мин» / «12 мин 05 с». */
 export function formatCountdown(ms: number): string {
@@ -73,6 +60,8 @@ export function outcomeText(o: SubmitOutcome, run: RunResult): string {
       return 'Демо-режим: рейтинг школы не подключён, очки остались только у тебя';
     case 'queued':
       return 'Забег ждёт интернета — отправим сами, как только появится связь';
+    case 'error':
+      return 'Упс, что-то пошло не так — забег не отправился в рейтинг. Попробуй сыграть ещё раз!';
     case 'rejected':
       switch (o.reason) {
         case 'TOO_SHORT': return 'Забег не засчитан — слишком короткий (меньше 5 секунд)';
@@ -103,7 +92,7 @@ export function mountLeaderboardScreen(host: HTMLElement, deps: LeaderboardScree
 
   // ---- шапка
   const head = el('div', 'ezq-lb__head');
-  const back = btn('ezq-lb__back', '← Профиль', () => { click(); deps.onBack(); });
+  const back = button('ezq-btn ezq-lb__back', '← Профиль', () => { click(); deps.onBack(); });
   const titles = el('div', 'ezq-lb__titles');
   const title = el('h1', 'ezq-lb__title', 'Рейтинг сезона');
   const seasonName = el('div', 'ezq-lb__season-name');
@@ -144,8 +133,8 @@ export function mountLeaderboardScreen(host: HTMLElement, deps: LeaderboardScree
     outcomeLine = el('div', 'ezq-lb__outcome ezq-lb__outcome--wait', 'Отправляем в рейтинг…');
     const actions = el('div', 'ezq-lb__actions');
     actions.append(
-      btn('ezq-lb__again', '▶ Ещё раз', () => { click(); deps.onPlayAgain(); }),
-      btn('ezq-lb__profile', 'В квест-профиль', () => { click(); deps.onBack(); }),
+      button('ezq-btn ezq-lb__again', '▶ Ещё раз', () => { click(); deps.onPlayAgain(); }),
+      button('ezq-btn ezq-lb__profile', 'В квест-профиль', () => { click(); deps.onBack(); }),
     );
     runCard.append(top, stats, outcomeLine, actions);
   }
@@ -228,7 +217,7 @@ export function mountLeaderboardScreen(host: HTMLElement, deps: LeaderboardScree
     const msg = rows
       ? `Нет связи — показан сохранённый рейтинг, ${fetchedAt ? formatAgo(Date.now() - fetchedAt) : 'обновлено давно'}`
       : 'Не удалось загрузить рейтинг — проверь интернет';
-    status.append(el('span', 'ezq-lb__status-text', msg), btn('ezq-lb__retry', 'Повторить', () => { click(); void refresh(); }));
+    status.append(el('span', 'ezq-lb__status-text', msg), button('ezq-btn ezq-lb__retry', 'Повторить', () => { click(); void refresh(); }));
   }
 
   function renderMe(): void {
@@ -336,7 +325,7 @@ export function mountLeaderboardScreen(host: HTMLElement, deps: LeaderboardScree
     err.setAttribute('role', 'alert');
     const save = el('button', 'ezq-btn ezq-lb__save', 'Сохранить');
     save.type = 'submit';
-    const cancel = btn('ezq-lb__cancel', 'Потом', () => closeDialog());
+    const cancel = button('ezq-btn ezq-lb__cancel', 'Потом', () => closeDialog());
     const row = el('div', 'ezq-lb__actions');
     row.append(save, cancel);
     form.append(
@@ -354,28 +343,41 @@ export function mountLeaderboardScreen(host: HTMLElement, deps: LeaderboardScree
       click();
       store.update((d) => { d.leaderboard.playerName = v.value; });
       closeDialog();
-      if (outcomeLine) setOutcome('Отправляем забег с новым ником…', 'wait');
-      void service.flushQueue().then(() => {
-        if (destroyed || !deps.lastRun) return;
-        const lr = store.get().arcade.lastRun;
-        const counted = lr && lr.runId === deps.lastRun.result.runId ? lr.countedScore : null;
-        setOutcome(counted !== null ? `+${fmt(counted)} в рейтинг сезона` : 'Забег ждёт отправки — попробуем ещё раз чуть позже', counted !== null ? 'ok' : 'wait');
-        void refresh();
-      }, () => undefined);
+      resend();
     });
     dialog.appendChild(form);
     root.appendChild(dialog);
     input.focus();
+  }
+  /** Отправить очередь заново (после смены ника); сбой — видимое ожидание с «Повторить», а не вечное «Отправляем…». */
+  let resending = false;
+  function resend(): void {
+    if (resending) return; // «Повторить» во время отправки ничего не запускает
+    resending = true;
+    setOutcome('Отправляем забег с новым ником…', 'wait');
+    void service.flushQueue().finally(() => { resending = false; }).then(() => {
+      if (destroyed || !deps.lastRun) return;
+      const lr = store.get().arcade.lastRun;
+      const counted = lr && lr.runId === deps.lastRun.result.runId ? lr.countedScore : null;
+      if (counted !== null) setOutcome(`+${fmt(counted)} в рейтинг сезона`, 'ok');
+      else setOutcome('Забег ждёт отправки — попробуем ещё раз чуть позже', 'wait', resend);
+      void refresh();
+    }, (e: unknown) => {
+      if (destroyed) return;
+      console.error('[ezq] flushQueue', e);
+      setOutcome('Не получилось отправить забег — он сохранён, попробуй ещё раз', 'wait', resend);
+    });
   }
   function closeDialog(): void {
     dialog?.remove();
     dialog = null;
   }
 
-  function setOutcome(text: string, mod: 'ok' | 'warn' | 'wait'): void {
+  function setOutcome(text: string, mod: 'ok' | 'warn' | 'wait', retry?: () => void): void {
     if (!outcomeLine) return;
     outcomeLine.className = `ezq-lb__outcome ezq-lb__outcome--${mod}`;
     outcomeLine.textContent = text;
+    if (retry) outcomeLine.append(' ', button('ezq-btn ezq-lb__retry', 'Повторить', () => { click(); retry(); }));
   }
 
   if (deps.lastRun) {

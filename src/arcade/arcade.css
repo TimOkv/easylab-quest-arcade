@@ -4,8 +4,8 @@
 .ezq-arcade .ezq-arcade__viewport {
   position: absolute;
   inset: 0;
-  /* поля по бокам сцены — тоже «половины экрана» для тача */
-  touch-action: none;
+  /* none — не здесь: кнопки внутри получили бы none через пересечение предков. Тач-поверхности — холст и подложка. */
+  touch-action: manipulation;
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
@@ -13,6 +13,13 @@
 
 .ezq-arcade__stage {
   background: var(--ezq-navy-deep);
+}
+
+/* Поля по бокам сцены — тоже «половины экрана» для тача: подложка под сценой, без кнопок внутри. */
+.ezq-arcade__pad {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
 }
 
 .ezq-arcade__canvas {

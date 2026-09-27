@@ -72,6 +72,18 @@ describe('createCuratorSync.syncNow', () => {
     expect(onCodeChanged).toHaveBeenCalledWith('EZ-ZZZZ');
   });
 
+  it('restored=false, но сервер выдал другой код (присланный занят) → код из ответа в store и колбэке', async () => {
+    const srv = fakeServer({
+      register_quest_completion: (a) => ({ body: { verification_code: 'EZ-Q7RT', coins_earned: a.p_coins, completed_at: a.p_completed_at, restored: false } }),
+    });
+    const store = makeStore();
+    const onCodeChanged = vi.fn();
+    expect(await createCuratorSync(srv.rest, store, { onCodeChanged }).syncNow()).toBe('synced');
+    expect(store.get().quest).toMatchObject({ verificationCode: 'EZ-Q7RT', totalCoinsEarned: 58, isSyncedWithCurator: true });
+    expect(onCodeChanged).toHaveBeenCalledWith('EZ-Q7RT');
+    expect(srv.rpcCalls('register_quest_completion')).toHaveLength(1);
+  });
+
   it('нет сети → "pending", попытка учтена', async () => {
     const srv = fakeServer({ register_quest_completion: () => ({ networkDown: true }) });
     const store = makeStore();
@@ -148,6 +160,35 @@ describe('createCuratorSync.startRetryLoop', () => {
     expect(srv.calls).toHaveLength(0);
     store.update((d) => { d.quest.isCompleted = true; d.quest.verificationCode = 'EZ-QQQQ'; d.quest.completedAt = Date.now(); });
     await vi.advanceTimersByTimeAsync(0);
+    expect(store.get().quest.isSyncedWithCurator).toBe(true);
+    stop();
+  });
+});
+
+describe('createCuratorSync — безнадёжные отказы', () => {
+  it.each(['BAD_NAME', 'BAD_COINS'])('%s не повторяется в цикле; код и монеты остаются локально', async (code) => {
+    vi.useFakeTimers();
+    const srv = fakeServer({ register_quest_completion: () => rpcError(`${code}: rejected`) });
+    const store = makeStore();
+    const sync = createCuratorSync(srv.rest, store, { win: new EventTarget() });
+    const stop = sync.startRetryLoop();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(4 * 30_000 + 60_000 + 120_000);
+    expect(await sync.syncNow()).toBe('pending'); // и прямой вызов (из рейтинга) не долбит сервер
+    expect(srv.rpcCalls('register_quest_completion')).toHaveLength(1);
+    expect(store.get().quest).toMatchObject({ verificationCode: 'EZ-AB2C', totalCoinsEarned: 58, isCompleted: true, lastSyncError: code });
+    stop();
+  });
+
+  it('BAD_NAME: после смены ника регистрация уходит снова', async () => {
+    vi.useFakeTimers();
+    const srv = fakeServer({ register_quest_completion: (a) => (a.p_player_name === 'Аня' ? rpcError('BAD_NAME') : okRegister(a)) });
+    const store = makeStore();
+    const stop = createCuratorSync(srv.rest, store, { win: new EventTarget() }).startRetryLoop();
+    await vi.advanceTimersByTimeAsync(0);
+    store.update((d) => { d.leaderboard.playerName = 'Котлета'; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(srv.rpcCalls('register_quest_completion')).toHaveLength(2);
     expect(store.get().quest.isSyncedWithCurator).toBe(true);
     stop();
   });

@@ -1,23 +1,13 @@
 // Мелкие DOM-помощники страницы куратора. Текст всегда кладётся через textContent.
 
-export type Attrs = Record<string, string>;
+import { el } from '../core/dom';
 
-/** Элемент с классом и (опционально) текстом. */
-export function h<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  className = '',
-  text?: string | number | null,
-  attrs: Attrs = {},
-): HTMLElementTagNameMap[K] {
-  const el = document.createElement(tag);
-  if (className) el.className = className;
-  if (text !== undefined && text !== null) el.textContent = String(text);
-  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
-  return el;
-}
+export type { Attrs } from '../core/dom';
+/** Элемент с классом, текстом и атрибутами — общий помощник `core/dom`. */
+export { el as h };
 
-export function button(text: string, mod = '', attrs: Attrs = {}): HTMLButtonElement {
-  return h('button', `ezq-verify-btn${mod ? ` ezq-verify-btn--${mod}` : ''}`, text, { type: 'button', ...attrs });
+export function button(text: string, mod = '', attrs: Record<string, string> = {}): HTMLButtonElement {
+  return el('button', `ezq-verify-btn${mod ? ` ezq-verify-btn--${mod}` : ''}`, text, { type: 'button', ...attrs });
 }
 
 /** Строка сообщения под формой: пустой текст прячет её. */

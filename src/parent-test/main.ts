@@ -1,15 +1,9 @@
 // Тестовый стенд EasyLab Bridge (история 80): модуль в iframe, форма EASYLAB_AUTH_INIT,
 // журнал сообщений с временем и JSON, сброс сохранения модуля. Работает в `npm run dev` и `vite preview`.
 import './parent-test.css';
+import { el } from '../core/dom';
 
 const MODULE_URL = './index.html';
-
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text?: string): HTMLElementTagNameMap[K] {
-  const e = document.createElement(tag);
-  e.className = cls;
-  if (text !== undefined) e.textContent = text;
-  return e;
-}
 
 function field(label: string, control: HTMLElement): HTMLLabelElement {
   const l = el('label', 'ezq-pt-field');
