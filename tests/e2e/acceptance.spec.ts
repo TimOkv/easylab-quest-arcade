@@ -1,6 +1,7 @@
 // Приёмка (таск 07, раздел 3 брифа): собранная сборка через `vite preview`, Supabase замокан перехватом /rest/v1/*.
-// Ожидаемые монеты посчитаны вручную по таблице спецификации §3:
-//   REWARDS = {1:[10,7,5], 2:[15,11,8], 3:[20,14,10], 4:[30,22,15]}, индекс = попытки−1 (макс. 3), вторая подсказка → 0.
+// Ожидаемые монеты посчитаны вручную по таблице «Монеты»: у каждой из двух загадок комнаты пул комнаты
+//   {1:[10,7,5], 2:[15,11,8], 3:[20,14,10], 4:[30,22,15]}, индекс = попытки−1 (макс. 3), вторая подсказка → 0.
+//   Вторая загадка каждой комнаты в сценариях решается сразу: +10 / +15 / +20 / +30.
 import { test, expect, type Page } from 'playwright/test';
 import { installSupabaseMock, MOCK_URL, DEMO_URL, CURATOR_SECRET, PRIOR_SEASON, type MockDb } from './support/supabase-mock';
 import { playQuest, playRun, saveOf, shot, expectNoHorizontalScroll, type QuestPlan } from './support/flow';
@@ -11,18 +12,18 @@ const VIEWPORTS = [
   {
     name: 'desktop',
     use: { viewport: { width: 1440, height: 900 } },
-    // 1: одна ошибка → 7; 2: две ошибки + подсказка 1 → 3-я попытка → 8; 3: сразу → 20; 4: сразу → 30. Итого 65.
+    // 1: одна ошибка → 7+10; 2: две ошибки + подсказка 1 → 3-я попытка → 8+15; 3: сразу → 20+20; 4: сразу → 30+30. Итого 140.
     plan: { room1Wrong: 1, room2Wrong: 2, room2Hint1: true, room3Wrong: 0, room3Hints: 0 } as QuestPlan,
-    rooms: [7, 8, 20, 30],
-    total: 65,
+    rooms: [17, 23, 40, 60],
+    total: 140,
   },
   {
     name: 'mobile',
     use: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 },
-    // 1: сразу → 10; 2: сразу → 15; 3: ошибка + обе подсказки → 0; 4: сразу → 30. Итого 55.
+    // 1: сразу → 10+10; 2: сразу → 15+15; 3: ошибка + обе подсказки → 0+20; 4: сразу → 30+30. Итого 130.
     plan: { room1Wrong: 0, room2Wrong: 0, room2Hint1: false, room3Wrong: 1, room3Hints: 2 } as QuestPlan,
-    rooms: [10, 15, 0, 30],
-    total: 55,
+    rooms: [20, 30, 20, 60],
+    total: 130,
   },
 ] as const;
 
@@ -50,8 +51,8 @@ for (const vp of VIEWPORTS) {
 
       // ---- триумф: фактические монеты и личный ID
       const triumph = page.locator('.ezq-triumph');
-      await expect(triumph.locator('.ezq-triumph__lead')).toHaveText(`Ты заработал ${vp.total} EasyCoins из 75 возможных!`);
-      await expect(triumph.locator('.ezq-triumph__room-coins')).toHaveText(vp.rooms.map((c, i) => `${c} / ${[10, 15, 20, 30][i]}`));
+      await expect(triumph.locator('.ezq-triumph__lead')).toHaveText(`Ты заработал ${vp.total} EasyCoins из 150 возможных!`);
+      await expect(triumph.locator('.ezq-triumph__room-coins')).toHaveText(vp.rooms.map((c, i) => `${c} / ${[20, 30, 40, 60][i]}`));
       const code = (await triumph.locator('.ezq-triumph__code').textContent())!.trim();
       expect(code).toMatch(CODE_RE);
       await expect(triumph.getByRole('button', { name: 'Скопировать личный ID для куратора' })).toBeVisible();
@@ -73,7 +74,7 @@ for (const vp of VIEWPORTS) {
       const card = page.locator('.ezq-arcade__card');
       await expect(card).toBeVisible();
       await expect(card).toContainText(code);
-      await expect(card).toContainText(`Заработано ${vp.total} из 75`);
+      await expect(card).toContainText(`Заработано ${vp.total} из 150`);
       await expect(page.locator('.ezq-intro, .ezq-qpanel, .ezq-triumph, .ezq-hotspot')).toHaveCount(0);
       await shot(page, `arcade-profile-${vp.name}`);
       // даже подмена сохранения на «экран квеста» не открывает квест
@@ -151,7 +152,7 @@ for (const vp of VIEWPORTS) {
       await expect(page.locator('.ezq-pt-log__item--out .ezq-pt-log__type', { hasText: 'EASYLAB_AUTH_INIT' })).toHaveCount(1);
       await expect(frame.locator('.ezq-intro__input')).toHaveValue('Аня');
 
-      // 1: ошибка → 7; 2–4 сразу → 15 + 20 + 30. Итого 72.
+      // 1: ошибка → 7 + 10; 2–4 сразу → 30 + 40 + 60. Итого 147.
       await playQuest(frame, null, { room1Wrong: 1, room2Wrong: 0, room2Hint1: false, room3Wrong: 0, room3Hints: 0 });
       const code = (await frame.locator('.ezq-triumph__code').textContent())!.trim();
       expect(code).toMatch(CODE_RE);
@@ -159,10 +160,11 @@ for (const vp of VIEWPORTS) {
       await expect(logItem('EASYLAB_QUEST_COMPLETED')).toHaveCount(1);
       const qc = await payloadOf('EASYLAB_QUEST_COMPLETED');
       expect(qc).toMatchObject({ source: 'ezq', version: 1, type: 'EASYLAB_QUEST_COMPLETED' });
-      expect(qc.payload).toMatchObject({ coinsEarned: 72, maxCoins: 75, verificationCode: code, studentId: 'student-1024' });
-      expect(qc.payload.rooms.map((r: { earnedCoins: number }) => r.earnedCoins)).toEqual([7, 15, 20, 30]);
+      expect(qc.payload).toMatchObject({ coinsEarned: 147, maxCoins: 150, verificationCode: code, studentId: 'student-1024' });
+      expect(qc.payload.rooms.map((r: { earnedCoins: number }) => r.earnedCoins)).toEqual([17, 30, 40, 60]);
+      expect(qc.payload.puzzles).toHaveLength(8);
       expect(Number.isNaN(Date.parse(qc.payload.completedAt))).toBe(false);
-      await expect(page.locator('.ezq-pt-tile__value').nth(0)).toHaveText('72 / 75');
+      await expect(page.locator('.ezq-pt-tile__value').nth(0)).toHaveText('147 / 150');
       await expect(page.locator('.ezq-pt-tile__value').nth(1)).toHaveText(code);
       await expect.poll(() => db.completions.get(code)?.student_id).toBe('student-1024');
 
@@ -237,7 +239,7 @@ test.describe('mobile, демо-режим без Supabase', () => {
 
     await gestures('.ezq-stage');
     await playQuest(page, 'Маша', { room1Wrong: 0, room2Wrong: 0, room2Hint1: false, room3Wrong: 0, room3Hints: 0 });
-    await expect(page.locator('.ezq-triumph__lead')).toHaveText('Ты заработал 75 EasyCoins из 75 возможных!');
+    await expect(page.locator('.ezq-triumph__lead')).toHaveText('Ты заработал 150 EasyCoins из 150 возможных!');
     await expect(page.locator('.ezq-triumph__sync--demo')).toBeVisible();
     await gestures('.ezq-triumph__card');
     await page.getByRole('button', { name: 'Сыграть в Аркаду и войти в ТОП-3!' }).click();

@@ -48,3 +48,24 @@ export const PUZZLES_BY_ROOM: Record<RoomIndex, readonly [PuzzleId, PuzzleId]>;
 ## Что построили таски
 
 (дописывается по мере сдачи)
+
+### Из таска 02 — сервер и куратор под 150
+
+- `quest_completions.coins_max integer NOT NULL DEFAULT 150`; строки, существовавшие до появления колонки, — 75. CHECK `quest_completions_coins_range`: `coins_earned` 0..150 (старые CHECK снимаются по любому имени).
+- `register_quest_completion` — сигнатура прежняя; `p_coins` 0..150, иначе `BAD_COINS`; во всех ответах (новая, повтор, `restored: true`) есть `coins_max`.
+- `restore_by_student(p_student_id)` → `{ verification_code, coins_earned, coins_max, player_name, completed_at }`.
+- `curator_find` / `curator_recent` / `curator_set_awarded` — карточка с `coins_max`. `verify.html`: «Заработано: N из M EasyCoins» (без `coins_max` — просто N).
+- Вебхук Google-таблицы: в `row` есть `coins_max`; `Code.gs` пишет «N из M».
+
+### Из таска 01 — ядро: 8 загадок, 150 монет, миграция
+
+- `core/types`: `PuzzleId` (8 литералов), `PUZZLES_BY_ROOM`, `PUZZLE_IDS: readonly PuzzleId[]`, `roomOfPuzzle(pid: unknown): RoomIndex | null`, `PuzzleState { earnedCoins; isSolved; attempts; hintsUsed: HintsUsed }`; `RoomState` — `id: string; title: string; maxReward: number; hintsUsed: number`.
+- Состояние: `quest.puzzles: Record<PuzzleId, PuzzleState>`, `quest.format: 2`, `quest.maxPossibleCoins: 75 | 150`, `navigation.isMusicMuted: boolean`; названия комнат «Спальня/Кухня/Библиотека/Чердак», `rooms[n].maxReward` 20/30/40/60 (суммы). Миграция незавершённого старого квеста — внутри `createStore`.
+- `core/rules`: `PUZZLE_REWARDS: Record<PuzzleId, [n,n,n]>`, `rewardFor(puzzleId, attempts, hintsUsed)`, `roomMaxReward(room)`, `MAX_TOTAL_COINS = 150` (старый `REWARDS` по комнатам удалён).
+- Контроллер: `submit(pid, answer)` (отказы `LOCKED|NOT_CURRENT|ALREADY_SOLVED|INCOMPLETE`), `useHint(pid)`, `canUseHint(pid, lvl)`, `currentReward(pid)`, `isRoomCleared(room)`, `advance()`, `startQuest(name)`.
+- Загадки: `PUZZLES: Record<PuzzleId, PuzzleDef>`; ответы: `var_assign`/`while_pc` — id варианта; `and_kettle` — `string[]` строк `'yy'|'yn'|'ny'|'nn'`; `fn_play` — токены `play,lparen,str_jazz,bare_jazz,comma,n3,rparen`.
+- `puzzle-ui`: новые `createChoice(host, { options, label, onChange })`, `createCheckRows(host, { columns, rows, label, onChange })` → `SlotBoard`; CSS `.ezq-pz-choice*`, `.ezq-pz-row*`.
+- Мост: `QuestCompletedPayload.maxCoins: number`, `puzzles: { id, room, earnedCoins, maxReward, attempts, hintsUsed }[]` (8; пусто у старых завершённых с максимумом 75).
+- Куратор: `BAD_COINS` — без повторов, `quest.lastSyncError = 'BAD_COINS'` (текст на экране — таск 05); `coins_max` читается из ответов restore/register (нет поля → 75 при монетах ≤ 75, иначе 150).
+- `src/quest/screen.ts` адаптирован минимально (старые тексты STORY) — переписывается в 05.
+- e2e: общий помощник прохождения — `tests/e2e/support/flow.ts`.

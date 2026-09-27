@@ -1,8 +1,8 @@
 // UI квеста: сцена с камерой, HUD монет, панель загадки (лист/модалка), intro и триумф.
 import './quest.css';
 import type { Store } from '../core/state';
-import type { EasyQuestGameState, RoomIndex } from '../core/types';
-import { MAX_TOTAL_COINS, PLAYER_NAME_MAX } from '../core/rules';
+import { PUZZLES_BY_ROOM, type EasyQuestGameState, type PuzzleId, type RoomIndex } from '../core/types';
+import { PLAYER_NAME_MAX } from '../core/rules';
 import type { Sfx } from '../services/sfx';
 import { copyText, createMuteButton, fitStage, showToast } from '../app/shell';
 import type { QuestController } from './controller';
@@ -21,6 +21,12 @@ export interface QuestScreenDeps {
 }
 
 const ROOMS: RoomIndex[] = [1, 2, 3, 4];
+
+/** Загадка, которую откроет комната: первая нерешённая (обе решены — вторая). */
+function activePuzzle(s: EasyQuestGameState, room: RoomIndex): PuzzleId {
+  const [a, b] = PUZZLES_BY_ROOM[room];
+  return s.quest.puzzles[a].isSolved ? b : a;
+}
 const CAMERA_MS = 1000;
 
 const STORY: Record<RoomIndex, { place: string; find: string; done: string }> = {
@@ -98,7 +104,7 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     });
     const room = s.quest.rooms[cur];
     stake.hidden = s.quest.isCompleted || room.isSolved || mode === 'intro';
-    stake.replaceChildren(el('span', 'ezq-qhud__stake-cap', 'Сейчас за верный ответ:'), el('b', 'ezq-qhud__stake-num', String(controller.currentReward(cur))));
+    stake.replaceChildren(el('span', 'ezq-qhud__stake-cap', 'Сейчас за верный ответ:'), el('b', 'ezq-qhud__stake-num', String(controller.currentReward(activePuzzle(s, cur)))));
   }
 
   // ------------------------------------------------------------ сцена
@@ -124,7 +130,7 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
   type Mode = 'intro' | 'prompt' | 'puzzle' | 'triumph';
   let mode: Mode = 'prompt';
   let view: PuzzleView | null = null;
-  let viewRoom: RoomIndex | null = null;
+  let viewPid: PuzzleId | null = null;
   let puzzleBox: HTMLElement | null = null;
 
   const setMode = (m: Mode): void => {
@@ -204,7 +210,7 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     open.addEventListener('click', openPuzzle);
     const actions = el('div', 'ezq-qpanel__actions');
     actions.appendChild(open);
-    setPanel([head, catBubble([PUZZLES[room].intro, `${STORY[room].find} — или кнопку ниже.`])], [actions]);
+    setPanel([head, catBubble([PUZZLES[activePuzzle(s, room)].intro, `${STORY[room].find} — или кнопку ниже.`])], [actions]);
     if (s.quest.rooms[room].isSolved) showSolvedOnly(room);
     renderHud();
   }
@@ -212,7 +218,7 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
   function destroyView(): void {
     view?.destroy();
     view = null;
-    viewRoom = null;
+    viewPid = null;
     puzzleBox = null;
   }
 
@@ -227,7 +233,8 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
       return;
     }
     setMode('puzzle');
-    const def = PUZZLES[room];
+    const pid = activePuzzle(s, room);
+    const def = PUZZLES[pid];
 
     const head = el('div', 'ezq-qpanel__head');
     const close = button('ezq-btn ezq-btn--icon ezq-qpanel__close', '✕');
@@ -240,12 +247,12 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     });
     head.append(el('span', 'ezq-qpanel__room', `Комната ${room} из 4 · ${def.title}`), close);
 
-    if (!puzzleBox || viewRoom !== room) {
+    if (!puzzleBox || viewPid !== pid) {
       destroyView();
       puzzleBox = el('div', 'ezq-pz');
-      viewRoom = room;
+      viewPid = pid;
       view = def.render(puzzleBox, {
-        onAnswerChange: (ready) => {
+        onAnswerChange: (ready: boolean) => {
           answerReady = ready;
           syncButtons();
         },
@@ -263,7 +270,7 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     actions.append(hintBtn, checkBtn);
 
     setPanel([head, catBubble([def.intro]), puzzleBox, feedback, hintsList], [confirmBox, actions]);
-    refs = { feedback, hintsList, confirmBox, actions, hintBtn, checkBtn, room };
+    refs = { feedback, hintsList, confirmBox, actions, hintBtn, checkBtn, room, pid };
     hintBtn.addEventListener('click', onHintClick);
     checkBtn.addEventListener('click', onCheck);
     renderHints();
@@ -282,11 +289,12 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     hintBtn: HTMLButtonElement;
     checkBtn: HTMLButtonElement;
     room: RoomIndex;
+    pid: PuzzleId;
   } | null = null;
 
   function syncButtons(): void {
     if (!refs) return;
-    const solved = store.get().quest.rooms[refs.room].isSolved;
+    const solved = store.get().quest.puzzles[refs.pid].isSolved;
     refs.checkBtn.disabled = !answerReady || checking || solved;
     refs.checkBtn.hidden = solved;
     refs.checkBtn.textContent = checking ? 'Проверяю…' : 'Проверить';
@@ -294,8 +302,8 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
 
   function renderHints(): void {
     if (!refs) return;
-    const r = store.get().quest.rooms[refs.room];
-    const def = PUZZLES[refs.room];
+    const r = store.get().quest.puzzles[refs.pid];
+    const def = PUZZLES[refs.pid];
     refs.hintsList.replaceChildren();
     for (let i = 0; i < r.hintsUsed; i++) {
       const item = el('div', `ezq-qpanel__hint-item ezq-qpanel__hint-item--${i + 1}`);
@@ -306,10 +314,10 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     b.classList.remove('ezq-pulse');
     if (r.isSolved || r.hintsUsed >= 2) b.hidden = true;
     else if (r.hintsUsed === 0) {
-      b.hidden = !controller.canUseHint(refs.room, 1);
+      b.hidden = !controller.canUseHint(refs.pid, 1);
       b.textContent = 'Подсказка';
     } else {
-      b.hidden = !controller.canUseHint(refs.room, 2);
+      b.hidden = !controller.canUseHint(refs.pid, 2);
       b.textContent = 'Ещё подсказка — без монет';
       if (r.attempts >= 2) b.classList.add('ezq-pulse');
     }
@@ -317,11 +325,11 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
 
   function onHintClick(): void {
     if (!refs || checking) return;
-    const room = refs.room;
-    const used = store.get().quest.rooms[room].hintsUsed;
+    const pid = refs.pid;
+    const used = store.get().quest.puzzles[pid].hintsUsed;
     sfx.play('click');
     if (used === 0) {
-      controller.useHint(room);
+      controller.useHint(pid);
       renderHints();
       renderHud();
       refs.hintsList.lastElementChild?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -333,13 +341,13 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     const no = button('ezq-btn ezq-btn--ghost', 'Не надо');
     const row = el('div', 'ezq-qpanel__actions');
     row.append(no, yes);
-    box.replaceChildren(el('p', 'ezq-qpanel__confirm-text', 'Эта подсказка почти решает загадку. Монеты за эту комнату не начислятся. Открыть?'), row);
+    box.replaceChildren(el('p', 'ezq-qpanel__confirm-text', 'Эта подсказка почти решает загадку. Монеты за эту загадку не начислятся. Открыть?'), row);
     no.addEventListener('click', () => {
       sfx.play('click');
       box.hidden = true;
     });
     yes.addEventListener('click', () => {
-      controller.useHint(room);
+      controller.useHint(pid);
       sfx.play('click');
       box.hidden = true;
       renderHints();
@@ -351,14 +359,14 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
 
   function onCheck(): void {
     if (!refs || !view || checking || !answerReady) return;
-    const { room } = refs;
+    const { room, pid } = refs;
     checking = true;
     syncButtons();
-    const res = controller.submit(room, view.getAnswer()); // попытка уже в сохранении
+    const res = controller.submit(pid, view.getAnswer()); // попытка уже в сохранении
     renderHud();
     later(() => {
       checking = false;
-      if (!refs || refs.room !== room) return;
+      if (!refs || refs.pid !== pid) return;
       if (res.correct) onSolved(room, res.reward ?? 0);
       else {
         sfx.play('wrong');
@@ -376,23 +384,26 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     if (!refs) return;
     sfx.play('correct');
     view?.showSolvedState();
-    scene.setSolved(room, true);
+    const roomCleared = controller.isRoomCleared(room);
+    if (roomCleared) scene.setSolved(room, true);
     refs.feedback.className = 'ezq-qpanel__feedback ezq-qpanel__feedback--ok';
     refs.feedback.replaceChildren(
-      el('b', 'ezq-qpanel__reward', reward > 0 ? `Верно! +${reward} EasyCoins` : 'Верно! Эта комната без монет — зато ты разобрался.'),
-      el('p', 'ezq-qpanel__story', STORY[room].done),
+      el('b', 'ezq-qpanel__reward', reward > 0 ? `Верно! +${reward} EasyCoins` : 'Верно! Эта загадка без монет — зато ты разобрался.'),
+      el('p', 'ezq-qpanel__story', roomCleared ? STORY[room].done : 'В этой комнате осталась ещё одна загадка!'),
     );
     refs.hintBtn.hidden = true;
     refs.confirmBox.hidden = true;
     syncButtons();
-    scene.setActiveHotspot(null);
+    if (roomCleared) scene.setActiveHotspot(null);
     awardCoins(refs.feedback, reward);
     renderHud();
     // Сворачиваем панель в карточку, чтобы было видно, как «ожила» комната.
     later(() => {
-      if (!triumph && store.get().navigation.currentRoomIndex === room) showSolvedOnly(room);
+      if (triumph || store.get().navigation.currentRoomIndex !== room) return;
+      if (roomCleared) showSolvedOnly(room);
+      else showPrompt(room);
     }, 1100);
-    if (room === 4) later(showTriumph, 2600);
+    if (store.get().quest.isCompleted) later(showTriumph, 2600);
   }
 
   /** Итог решённой комнаты (и после перезагрузки до «Дальше»): карточка с наградой и «Дальше». */
@@ -401,9 +412,9 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     setMode('prompt');
     const r = store.get().quest.rooms[room];
     const head = el('div', 'ezq-qpanel__head');
-    head.append(el('span', 'ezq-qpanel__room', `Комната ${room} из 4 · ${PUZZLES[room].title}`));
+    head.append(el('span', 'ezq-qpanel__room', `Комната ${room} из 4 · ${STORY[room].place}`));
     const fb = el('div', 'ezq-qpanel__feedback ezq-qpanel__feedback--ok');
-    fb.append(el('b', 'ezq-qpanel__reward', `Загадка решена: +${r.earnedCoins} EasyCoins`), el('p', 'ezq-qpanel__story', STORY[room].done));
+    fb.append(el('b', 'ezq-qpanel__reward', `Обе загадки решены: +${r.earnedCoins} EasyCoins`), el('p', 'ezq-qpanel__story', STORY[room].done));
     const actions = el('div', 'ezq-qpanel__actions');
     if (room < 4) {
       const next = button('ezq-btn ezq-btn--big ezq-qpanel__next', 'Дальше →');
@@ -480,7 +491,7 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     const title = el('h2', 'ezq-triumph__title', 'Поздравляем!');
     title.id = 'ezq-triumph-title';
     const lead = el('p', 'ezq-triumph__lead');
-    lead.append(coinIcon('ezq-coin ezq-coin--lg'), el('span', '', `Ты заработал ${total} EasyCoins из ${MAX_TOTAL_COINS} возможных!`));
+    lead.append(coinIcon('ezq-coin ezq-coin--lg'), el('span', '', `Ты заработал ${total} EasyCoins из ${s.quest.maxPossibleCoins} возможных!`));
     const name = s.leaderboard.playerName;
 
     const table = el('ul', 'ezq-triumph__rooms');

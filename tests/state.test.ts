@@ -37,10 +37,13 @@ describe('createInitialState', () => {
   it('форма §4.1 + §2', () => {
     const s = createInitialState(123, 'sess-1');
     expect(s.meta).toMatchObject({ version: '1.0.0', sessionId: 'sess-1', createdAt: 123, updatedAt: 123, theme: 'dark', platformStudentId: null });
-    expect(s.navigation).toEqual({ currentScreen: 'quest', currentRoomIndex: 1, isAudioMuted: false });
-    expect(s.quest).toMatchObject({ totalCoinsEarned: 0, maxPossibleCoins: 75, isCompleted: false, completedAt: null, verificationCode: null, isSyncedWithCurator: false, syncAttempts: 0, lastSyncError: null });
-    expect(s.quest.rooms[1]).toEqual({ id: 'room_variables', title: 'Рабочее место', maxReward: 10, earnedCoins: 0, isSolved: false, attempts: 0, hintsUsed: 0 });
-    expect(s.quest.rooms[4]).toMatchObject({ id: 'room_functions', maxReward: 30 });
+    expect(s.navigation).toEqual({ currentScreen: 'quest', currentRoomIndex: 1, isAudioMuted: false, isMusicMuted: false });
+    expect(s.quest).toMatchObject({ totalCoinsEarned: 0, maxPossibleCoins: 150, format: 2, isCompleted: false, completedAt: null, verificationCode: null, isSyncedWithCurator: false, syncAttempts: 0, lastSyncError: null });
+    expect(s.quest.rooms[1]).toEqual({ id: 'room_variables', title: 'Спальня', maxReward: 20, earnedCoins: 0, isSolved: false, attempts: 0, hintsUsed: 0 });
+    expect([2, 3, 4].map((n) => s.quest.rooms[n as 2 | 3 | 4].maxReward)).toEqual([30, 40, 60]);
+    expect(s.quest.rooms[4]).toMatchObject({ id: 'room_functions', title: 'Чердак' });
+    expect(Object.keys(s.quest.puzzles).sort()).toEqual(['and_kettle', 'fn_mission', 'fn_play', 'for_shelf', 'if_fridge', 'var_assign', 'var_types', 'while_pc']);
+    expect(s.quest.puzzles.while_pc).toEqual({ earnedCoins: 0, isSolved: false, attempts: 0, hintsUsed: 0 });
     expect(s.arcade).toEqual({ isUnlocked: false, highScore: 0, totalRunsPlayed: 0, bestHeightPx: 0, lastRun: null });
     expect(s.leaderboard).toMatchObject({ playerName: '', hasSubmittedScore: false, currentRank: null, isTop3Winner: false, cachedTop: null, isHidden: false });
   });
@@ -142,6 +145,72 @@ describe('createStore — сохранение ezq_save_v1', () => {
     expect(loaded.meta.theme).toBe('dark');
     expect(loaded.arcade.bestHeightPx).toBe(0);
     expect(loaded.quest.rooms[2]).toMatchObject({ hintsUsed: 0, attempts: 4 });
+  });
+
+  /** Сохранение старого квеста (4 загадки, до 75): без format, puzzles и isMusicMuted. */
+  function legacySave(patch: (s: Record<string, any>) => void): string {
+    const s = createInitialState(500, 'old-sess') as unknown as Record<string, any>;
+    delete s.quest.format;
+    delete s.quest.puzzles;
+    delete s.navigation.isMusicMuted;
+    s.quest.maxPossibleCoins = 75;
+    [10, 15, 20, 30].forEach((m, i) => { s.quest.rooms[i + 1].maxReward = m; });
+    s.leaderboard.playerName = 'Аня';
+    s.navigation.isAudioMuted = true;
+    patch(s);
+    return JSON.stringify(s);
+  }
+
+  it('миграция: незавершённый старый квест начинается заново, ник, meta и звук на месте', () => {
+    const storage = new FakeStorage();
+    storage.setItem(SAVE_KEY, legacySave((s) => {
+      s.navigation.currentRoomIndex = 3;
+      Object.assign(s.quest.rooms[1], { isSolved: true, earnedCoins: 7, attempts: 2 });
+      Object.assign(s.quest.rooms[2], { isSolved: true, earnedCoins: 15, attempts: 1, hintsUsed: 1 });
+      s.quest.rooms[3].attempts = 4;
+      s.quest.totalCoinsEarned = 22;
+    }));
+    const loaded = loadState(storage)!;
+    expect(loaded.meta).toMatchObject({ sessionId: 'old-sess', createdAt: 500 });
+    expect(loaded.leaderboard.playerName).toBe('Аня');
+    expect(loaded.navigation).toMatchObject({ currentScreen: 'quest', currentRoomIndex: 1, isAudioMuted: true, isMusicMuted: false });
+    expect(loaded.quest).toMatchObject({ format: 2, maxPossibleCoins: 150, totalCoinsEarned: 0, isCompleted: false, verificationCode: null });
+    expect(loaded.quest.rooms[1]).toEqual({ id: 'room_variables', title: 'Спальня', maxReward: 20, earnedCoins: 0, isSolved: false, attempts: 0, hintsUsed: 0 });
+    expect(loaded.quest.rooms[3]).toMatchObject({ attempts: 0, maxReward: 40 });
+    expect(Object.values(loaded.quest.puzzles).every((p) => !p.isSolved && p.attempts === 0 && p.earnedCoins === 0)).toBe(true);
+  });
+
+  it('миграция: завершённый старый квест не трогается — монеты, код и максимум 75 на месте', () => {
+    const storage = new FakeStorage();
+    storage.setItem(SAVE_KEY, legacySave((s) => {
+      s.navigation.currentScreen = 'arcade';
+      s.navigation.currentRoomIndex = 4;
+      [7, 15, 20, 30].forEach((c, i) => Object.assign(s.quest.rooms[i + 1], { isSolved: true, earnedCoins: c, attempts: c === 7 ? 2 : 1 }));
+      Object.assign(s.quest, { totalCoinsEarned: 72, isCompleted: true, completedAt: 900, verificationCode: 'EZ-AB2C', isSyncedWithCurator: true });
+      s.arcade.isUnlocked = true;
+      s.arcade.highScore = 420;
+    }));
+    const loaded = loadState(storage)!;
+    expect(loaded.quest).toMatchObject({ isCompleted: true, completedAt: 900, verificationCode: 'EZ-AB2C', totalCoinsEarned: 72, maxPossibleCoins: 75, isSyncedWithCurator: true });
+    expect([1, 2, 3, 4].map((n) => loaded.quest.rooms[n as 1 | 2 | 3 | 4].maxReward)).toEqual([10, 15, 20, 30]);
+    expect(loaded.quest.rooms[1]).toMatchObject({ earnedCoins: 7, attempts: 2, isSolved: true });
+    expect(loaded.navigation).toMatchObject({ currentScreen: 'arcade', currentRoomIndex: 4, isAudioMuted: true, isMusicMuted: false });
+    expect(loaded.arcade).toMatchObject({ isUnlocked: true, highScore: 420 });
+  });
+
+  it('квест формата 2 не сбрасывается при перезагрузке посреди комнаты', () => {
+    const storage = new FakeStorage();
+    const a = createStore({ storage, now: clock(), win: null });
+    a.update((d) => {
+      d.navigation.currentRoomIndex = 2;
+      d.navigation.isMusicMuted = true;
+      Object.assign(d.quest.puzzles.var_types, { isSolved: true, earnedCoins: 10, attempts: 1 });
+      Object.assign(d.quest.puzzles.if_fridge, { attempts: 2, hintsUsed: 1 });
+    });
+    const b = createStore({ storage, now: clock(), win: null });
+    expect(b.get().navigation).toMatchObject({ currentRoomIndex: 2, isMusicMuted: true });
+    expect(b.get().quest.puzzles.var_types).toMatchObject({ isSolved: true, earnedCoins: 10 });
+    expect(b.get().quest.puzzles.if_fridge).toMatchObject({ attempts: 2, hintsUsed: 1 });
   });
 
   it('событие storage перечитывает состояние (квест завершён в другой вкладке)', () => {

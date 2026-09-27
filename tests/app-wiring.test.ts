@@ -7,7 +7,7 @@ import { NetworkError } from '../src/services/rest';
 import type { AppContext } from '../src/app/screens';
 import { createBridge, type BridgeWindow } from '../src/services/bridge';
 import { createInitialState, SAVE_KEY } from '../src/core/state';
-import type { RoomIndex, RunResult, ScreenName } from '../src/core/types';
+import { PUZZLES_BY_ROOM, type PuzzleId, type RoomIndex, type RunResult, type ScreenName } from '../src/core/types';
 import { FakeStorage, fakeServer, type Handler } from './services/helpers';
 import type { RestClient } from '../src/services/rest';
 
@@ -19,11 +19,15 @@ const stub: any = new Proxy(function () {}, {
 });
 HTMLCanvasElement.prototype.getContext = (() => stub) as never;
 
-const RIGHT: Record<RoomIndex, unknown> = {
-  1: { name: 'murzik', age: 'num12', likes: 'true' },
-  2: 'else',
-  3: ['for_0_lt5', 'put', 'close'],
-  4: ['runMission', 'lparen', 'str_arcade', 'rparen'],
+const RIGHT: Record<PuzzleId, unknown> = {
+  var_types: { name: 'izik', age: 'num12', likes: 'true' },
+  var_assign: 'five',
+  if_fridge: 'else',
+  and_kettle: ['yy'],
+  for_shelf: ['for_0_lt5', 'put', 'close'],
+  while_pc: 'five',
+  fn_play: ['play', 'lparen', 'str_jazz', 'comma', 'n3', 'rparen'],
+  fn_mission: ['runMission', 'lparen', 'str_arcade', 'rparen'],
 };
 const WRONG2 = 'if';
 const PLATFORM = 'https://app.easycode-lab.ru';
@@ -103,24 +107,26 @@ describe('app wiring', () => {
     const ctx = t.last()!.ctx;
     expect(ctx.controller.startQuest('Аня').ok).toBe(true);
     for (const n of [1, 2, 3, 4] as RoomIndex[]) {
-      if (n === 2) ctx.controller.submit(2, WRONG2);
-      expect(ctx.controller.submit(n, RIGHT[n]).correct).toBe(true);
+      if (n === 2) ctx.controller.submit('if_fridge', WRONG2);
+      for (const pid of PUZZLES_BY_ROOM[n]) expect(ctx.controller.submit(pid, RIGHT[pid]).correct).toBe(true);
       if (n < 4) ctx.controller.advance();
     }
     await tick();
     const q = t.app.store.get().quest;
     expect(q.isCompleted).toBe(true);
-    expect(q.totalCoinsEarned).toBe(10 + 11 + 20 + 30); // вторая комната — со второй попытки (Решения §3)
+    expect(q.totalCoinsEarned).toBe(150 - 15 + 11); // холодильник — со второй попытки (таблица «Монеты»)
 
     // Куратор получил запись, платформа — событие с точными монетами, кодом и комнатами.
-    expect(t.server.rpcCalls('register_quest_completion')[0]?.args).toMatchObject({ p_code: q.verificationCode, p_coins: 71, p_student_id: 'stu-9' });
+    expect(t.server.rpcCalls('register_quest_completion')[0]?.args).toMatchObject({ p_code: q.verificationCode, p_coins: 146, p_student_id: 'stu-9' });
     const done = t.parent.find('EASYLAB_QUEST_COMPLETED');
     expect(done?.target).toBe(PLATFORM);
     expect(done?.data).toMatchObject({ source: 'ezq', version: 1 });
-    expect(done?.data.payload).toMatchObject({ coinsEarned: 71, maxCoins: 75, verificationCode: q.verificationCode, studentId: 'stu-9' });
+    expect(done?.data.payload).toMatchObject({ coinsEarned: 146, maxCoins: 150, verificationCode: q.verificationCode, studentId: 'stu-9' });
     expect(done?.data.payload.completedAt).toBe(new Date(q.completedAt!).toISOString());
-    expect(done?.data.payload.rooms.map((r: { earnedCoins: number }) => r.earnedCoins)).toEqual([10, 11, 20, 30]);
-    expect(done?.data.payload.rooms[1]).toMatchObject({ room: 2, attempts: 2 });
+    expect(done?.data.payload.rooms.map((r: { earnedCoins: number }) => r.earnedCoins)).toEqual([20, 26, 40, 60]);
+    expect(done?.data.payload.rooms[1]).toMatchObject({ room: 2, attempts: 3, maxReward: 30 });
+    expect(done?.data.payload.puzzles).toHaveLength(8);
+    expect(done?.data.payload.puzzles.find((p: { id: string }) => p.id === 'if_fridge')).toEqual({ id: 'if_fridge', room: 2, earnedCoins: 11, maxReward: 15, attempts: 2, hintsUsed: 0 });
 
     // Триумф ждёт кнопку: роутер не уводит с квеста сам.
     expect(t.app.router?.current()).toBe('quest');
@@ -217,7 +223,16 @@ describe('questCompletedPayload', () => {
     const noDate = { ...s, quest: { ...s.quest, isCompleted: true, completedAt: null, verificationCode: 'EZ-AB2C' } };
     expect(questCompletedPayload(noDate)).toBeNull();
     const done = { ...s, quest: { ...s.quest, isCompleted: true, completedAt: 1_700_000_000_000, verificationCode: 'EZ-AB2C', totalCoinsEarned: 61 } };
-    expect(questCompletedPayload(done)).toMatchObject({ coinsEarned: 61, maxCoins: 75, verificationCode: 'EZ-AB2C', completedAt: new Date(1_700_000_000_000).toISOString() });
+    expect(questCompletedPayload(done)).toMatchObject({ coinsEarned: 61, maxCoins: 150, verificationCode: 'EZ-AB2C', completedAt: new Date(1_700_000_000_000).toISOString() });
+    expect(questCompletedPayload(done)!.puzzles.map((p) => p.id)).toEqual(['var_types', 'var_assign', 'if_fridge', 'and_kettle', 'for_shelf', 'while_pc', 'fn_play', 'fn_mission']);
+  });
+
+  it('старое прохождение (максимум 75): maxCoins из состояния, комнаты на месте, puzzles пусто', () => {
+    const s = createInitialState(1_700_000_000_000, 'sess');
+    const legacy = { ...s, quest: { ...s.quest, isCompleted: true, completedAt: 1, verificationCode: 'EZ-AB2C', totalCoinsEarned: 72, maxPossibleCoins: 75 as const } };
+    const p = questCompletedPayload(legacy)!;
+    expect(p).toMatchObject({ coinsEarned: 72, maxCoins: 75, puzzles: [] });
+    expect(p.rooms).toHaveLength(4);
   });
 });
 

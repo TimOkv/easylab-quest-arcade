@@ -85,22 +85,51 @@ export interface CuratorSync {
 
 export type HintsUsed = 0 | 1 | 2;
 
-export interface RoomState<Id extends string, Title extends string, Max extends number> {
-  id: Id;
-  title: Title;
-  maxReward: Max;
+/** 8 загадок квеста: по 2 на комнату (спальня, кухня, библиотека, чердак). */
+export type PuzzleId =
+  | 'var_types' | 'var_assign' // комната 1, спальня: компьютер, шкаф
+  | 'if_fridge' | 'and_kettle' // комната 2, кухня: холодильник, чайник
+  | 'for_shelf' | 'while_pc' // комната 3, библиотека: стеллаж, старый компьютер
+  | 'fn_play' | 'fn_mission'; // комната 4, чердак: проигрыватель, сундук (финал)
+
+export const PUZZLES_BY_ROOM: Readonly<Record<RoomIndex, readonly [PuzzleId, PuzzleId]>> = {
+  1: ['var_types', 'var_assign'],
+  2: ['if_fridge', 'and_kettle'],
+  3: ['for_shelf', 'while_pc'],
+  4: ['fn_play', 'fn_mission'],
+};
+
+/** Все 8 загадок по порядку комнат. */
+export const PUZZLE_IDS: readonly PuzzleId[] = ([1, 2, 3, 4] as const).flatMap((r) => PUZZLES_BY_ROOM[r]);
+
+/** Комната загадки; для чужой строки — null. */
+export function roomOfPuzzle(pid: unknown): RoomIndex | null {
+  for (const r of [1, 2, 3, 4] as const) if ((PUZZLES_BY_ROOM[r] as readonly unknown[]).includes(pid)) return r;
+  return null;
+}
+
+export interface PuzzleState {
   earnedCoins: number;
   isSolved: boolean;
   attempts: number;
-  hintsUsed: HintsUsed; // §2
+  hintsUsed: HintsUsed;
 }
 
-export interface QuestRooms {
-  1: RoomState<'room_variables', 'Рабочее место', 10>;
-  2: RoomState<'room_conditions', 'Умный шкаф / Робот', 15>;
-  3: RoomState<'room_loops', 'Библиотека знаний', 20>;
-  4: RoomState<'room_functions', 'Командный центр маскота', 30>;
+/**
+ * Итог комнаты (для совместимости: мост, триумф, старые сохранения). У квеста формата 2 —
+ * суммы по двум загадкам комнаты; `isSolved` — обе решены.
+ */
+export interface RoomState {
+  id: string;
+  title: string;
+  maxReward: number;
+  earnedCoins: number;
+  isSolved: boolean;
+  attempts: number;
+  hintsUsed: number; // §2; в формате 2 — сумма подсказок двух загадок
 }
+
+export type QuestRooms = Record<RoomIndex, RoomState>;
 
 export interface LastRun {
   runId: string;
@@ -126,10 +155,14 @@ export interface EasyQuestGameState {
     currentScreen: ScreenName;
     currentRoomIndex: RoomIndex;
     isAudioMuted: boolean;
+    isMusicMuted: boolean;
   };
   quest: {
     totalCoinsEarned: number;
-    maxPossibleCoins: 75;
+    /** 150 — квест из 8 загадок; 75 — прохождение старого квеста (остаётся из сохранения). */
+    maxPossibleCoins: 75 | 150;
+    /** Метка формата квеста (8 загадок). Сохранения без неё мигрируют при загрузке. */
+    format: 2;
     isCompleted: boolean;
     completedAt: number | null;
     verificationCode: string | null;
@@ -137,6 +170,7 @@ export interface EasyQuestGameState {
     syncAttempts: number; // §2
     lastSyncError: string | null; // §2
     rooms: QuestRooms;
+    puzzles: Record<PuzzleId, PuzzleState>;
   };
   arcade: {
     isUnlocked: boolean;

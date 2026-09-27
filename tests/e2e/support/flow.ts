@@ -13,7 +13,11 @@ export async function shot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: `${SHOTS_DIR}/final-${name}.png` });
 }
 
-/** Как ученик решает каждую комнату (ожидаемые монеты тест считает сам, по таблице спецификации §3). */
+/**
+ * Как ученик решает первую (старую) загадку каждой комнаты; вторая загадка комнаты (шкаф, чайник,
+ * старый компьютер, проигрыватель) всегда решается с первой попытки — ожидаемые монеты тест считает сам
+ * по таблице «Монеты».
+ */
 export interface QuestPlan {
   room1Wrong: number; // неверных попыток до верной (0 или 1)
   room2Wrong: number; // 0..2 — неверные ветки
@@ -49,6 +53,20 @@ async function openPuzzle(s: Scope): Promise<void> {
   await expect(s.locator('.ezq-qpanel__check')).toBeVisible();
 }
 
+const choice = (s: Scope, label: string): Locator =>
+  s.locator('.ezq-pz-choice').filter({ hasText: new RegExp(`^${label}$`) }).first();
+
+/** Вторая загадка комнаты — сразу верно. Панель после первой загадки возвращается к «Открыть загадку». */
+async function solveSecond(s: Scope, room: 1 | 2 | 3 | 4, hooks: QuestHooks): Promise<void> {
+  await openPuzzle(s);
+  if (room === 1) await choice(s, '5').click(); // socks = 2 + 3
+  if (room === 2) await s.locator('.ezq-pz-row').nth(0).click(); // вода ✓, ток ✓
+  if (room === 3) await choice(s, '5').click(); // pages: 10, 8, 6, 4, 2
+  if (room === 4) for (const t of [/^play$/, /^\($/, /^"Jazz"$/, /^,$/, /^3$/, /^\)$/]) await card(s, t).click();
+  await hooks.eachRoom?.();
+  await check(s, true);
+}
+
 async function next(s: Scope): Promise<void> {
   await s.locator('.ezq-qpanel__next').click();
 }
@@ -75,10 +93,10 @@ export async function playQuest(s: Scope, name: string | null, plan: QuestPlan, 
   if (name !== null) await input.fill(name);
   await s.locator('.ezq-intro__start').click();
 
-  // Комната 1: имя ← "Мурзик", возраст ← 12, любитКодить ← true (ловушка — "12").
+  // Комната 1: имя ← "Изик", возраст ← 12, любитКодить ← true (ловушка — "12").
   await hooks.onRoom?.('room');
   await openPuzzle(s);
-  await card(s, '"Мурзик"').click(); await slot(s, 0).click();
+  await card(s, '"Изик"').click(); await slot(s, 0).click();
   if (plan.room1Wrong) {
     await card(s, '"12"').click(); await slot(s, 1).click();
     await card(s, /^true$/).click(); await slot(s, 2).click();
@@ -92,6 +110,7 @@ export async function playQuest(s: Scope, name: string | null, plan: QuestPlan, 
   await hooks.onRoom?.('puzzle');
   await hooks.eachRoom?.();
   await check(s, true);
+  await solveSecond(s, 1, hooks);
   await next(s);
 
   // Комната 2: датчик жёлтый → верная ветка — else (третья).
@@ -104,6 +123,7 @@ export async function playQuest(s: Scope, name: string | null, plan: QuestPlan, 
   await s.locator('.ezq-pz-branch').nth(2).click();
   await hooks.eachRoom?.();
   await check(s, true);
+  await solveSecond(s, 2, hooks);
   await next(s);
 
   // Комната 3: for (let i = 0; i < 5; i++) { shelf.putBook() }.
@@ -124,9 +144,11 @@ export async function playQuest(s: Scope, name: string | null, plan: QuestPlan, 
   }
   await hooks.eachRoom?.();
   await check(s, true);
+  await solveSecond(s, 3, hooks);
   await next(s);
 
-  // Комната 4: runMission ( "ARCADE" ).
+  // Комната 4: сначала проигрыватель play("Jazz", 3), затем финальная — runMission ( "ARCADE" ).
+  await solveSecond(s, 4, hooks);
   await openPuzzle(s);
   for (const t of [/^runMission$/, /^\($/, /^"ARCADE"$/, /^\)$/]) await card(s, t).click();
   await hooks.eachRoom?.();

@@ -34,7 +34,7 @@ test('экран: профиль, «Играть», падение → store о�
   const card = page.locator('.ezq-arcade__card');
   await expect(card).toContainText('Тестер');
   await expect(card).toContainText('EZ-7K3M');
-  await expect(card).toContainText('Заработано 60 из 75');
+  await expect(card).toContainText('Заработано 60 из 150');
   await expect(page.locator('.ezq-arcade__canvas')).toHaveCSS('touch-action', 'none');
   await page.getByRole('button', { name: /Играть/ }).click();
   await expect(card).toBeHidden();

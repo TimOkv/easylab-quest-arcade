@@ -45,8 +45,8 @@ function fakeWindow(opts: { embedded: boolean; referrer?: string; origin?: strin
 }
 
 const QUEST = {
-  coinsEarned: 58, maxCoins: 75 as const, verificationCode: 'EZ-AB2C', completedAt: '2026-09-26T10:00:00.000Z',
-  studentId: null, rooms: [],
+  coinsEarned: 58, maxCoins: 150, verificationCode: 'EZ-AB2C', completedAt: '2026-09-26T10:00:00.000Z',
+  studentId: null, rooms: [], puzzles: [{ id: 'var_types' as const, room: 1 as const, earnedCoins: 10, maxReward: 10, attempts: 1, hintsUsed: 0 }],
 };
 
 describe('createBridge', () => {

@@ -72,6 +72,15 @@ describe('createCuratorSync.syncNow', () => {
     expect(onCodeChanged).toHaveBeenCalledWith('EZ-ZZZZ');
   });
 
+  it('restored=true с coins_max → максимум из записи сервера', async () => {
+    const srv = fakeServer({
+      register_quest_completion: () => ({ body: { verification_code: 'EZ-ZZZZ', coins_earned: 70, coins_max: 75, completed_at: '2023-11-01T10:00:00.000Z', restored: true } }),
+    });
+    const store = makeStore((d) => { d.meta.platformStudentId = 'st-1'; d.quest.maxPossibleCoins = 150; });
+    expect(await createCuratorSync(srv.rest, store).syncNow()).toBe('synced');
+    expect(store.get().quest).toMatchObject({ totalCoinsEarned: 70, maxPossibleCoins: 75 });
+  });
+
   it('restored=false, но сервер выдал другой код (присланный занят) → код из ответа в store и колбэке', async () => {
     const srv = fakeServer({
       register_quest_completion: (a) => ({ body: { verification_code: 'EZ-Q7RT', coins_earned: a.p_coins, completed_at: a.p_completed_at, restored: false } }),
@@ -93,6 +102,19 @@ describe('createCuratorSync.syncNow', () => {
 });
 
 describe('createCuratorSync.restoreByStudent', () => {
+  it.each([
+    [{ coins_max: 150, coins_earned: 70 }, 150],
+    [{ coins_max: 75, coins_earned: 70 }, 75],
+    [{ coins_earned: 120 }, 150], // ответ старого сервера, но монет больше 75 — новый квест
+  ])('максимум из ответа: %j → %i', async (extra, expected) => {
+    const srv = fakeServer({
+      restore_by_student: () => ({ body: { verification_code: 'EZ-KKKK', player_name: 'Петя', completed_at: '2026-09-20T09:00:00Z', ...extra } }),
+    });
+    const store = makeStore((d) => { d.quest.isCompleted = false; d.quest.verificationCode = null; d.quest.completedAt = null; });
+    expect(await createCuratorSync(srv.rest, store).restoreByStudent('st-9')).toBe(true);
+    expect(store.get().quest).toMatchObject({ maxPossibleCoins: expected, totalCoinsEarned: extra.coins_earned });
+  });
+
   it('найдено на сервере → квест завершён с серверными кодом/монетами, аркада открыта', async () => {
     const srv = fakeServer({
       restore_by_student: (a) => ({ body: a.p_student_id === 'st-9' ? { verification_code: 'EZ-KKKK', coins_earned: 65, player_name: 'Петя', completed_at: '2026-09-20T09:00:00Z' } : null }),
@@ -107,6 +129,7 @@ describe('createCuratorSync.restoreByStudent', () => {
     expect(await sync.restoreByStudent('st-9')).toBe(true);
     const s = store.get();
     expect(s.quest).toMatchObject({ isCompleted: true, verificationCode: 'EZ-KKKK', totalCoinsEarned: 65, isSyncedWithCurator: true, completedAt: Date.parse('2026-09-20T09:00:00Z') });
+    expect(s.quest.maxPossibleCoins).toBe(75); // старый сервер без coins_max, монет ≤ 75 → прохождение старого квеста
     expect(s.arcade.isUnlocked).toBe(true);
     expect(s.leaderboard.playerName).toBe('Петя');
     expect(s.meta.platformStudentId).toBe('st-9');

@@ -1,8 +1,8 @@
 // Реестр куратора: регистрация прохождения (RPC register_quest_completion), повторы с backoff,
 // перевыпуск кода при CODE_TAKEN, восстановление по student_id (G03).
-import type { CuratorSync, RoomIndex } from '../core/types';
+import { PUZZLE_IDS, type CuratorSync, type RoomIndex } from '../core/types';
 import type { Store } from '../core/state';
-import { generateVerificationCode, isValidVerificationCode } from '../core/rules';
+import { MAX_TOTAL_COINS, generateVerificationCode, isValidVerificationCode } from '../core/rules';
 import { NetworkError, RpcError, type RestClient } from './rest';
 
 export interface CuratorSyncOptions {
@@ -20,6 +20,8 @@ interface RegisterResponse {
   completed_at: string;
   restored: boolean;
   player_name?: string;
+  /** Максимум, из которого считались монеты (75 — старый квест, 150 — новый); у старого сервера нет. */
+  coins_max?: number;
 }
 
 interface RestoreResponse {
@@ -27,6 +29,13 @@ interface RestoreResponse {
   coins_earned: number;
   player_name: string;
   completed_at: string;
+  coins_max?: number;
+}
+
+/** Максимум записи реестра: из `coins_max`, а у ответа старого сервера — 75, если монет не больше 75. */
+function maxFromServer(coinsMax: unknown, coins: number): 75 | 150 {
+  if (coinsMax === 75 || coinsMax === MAX_TOTAL_COINS) return coinsMax;
+  return coins <= 75 ? 75 : MAX_TOTAL_COINS;
 }
 
 export const MAX_CODE_REISSUES = 5;
@@ -34,7 +43,7 @@ export const RETRY_BASE_MS = 30_000;
 export const RETRY_MAX_MS = 5 * 60_000;
 
 const ROOMS: readonly RoomIndex[] = [1, 2, 3, 4];
-/** Отказы, которые повтор с теми же данными не исправит: ждём смены ника/монет. */
+/** Отказы, которые повтор с теми же данными не исправит: ждём смены ника/монет. BAD_COINS — сервер ещё не знает про 150. */
 const FATAL = new Set(['BAD_NAME', 'BAD_COINS']);
 
 export function createCuratorSync(rest: RestClient, store: Store, opts: CuratorSyncOptions = {}): CuratorSync {
@@ -82,6 +91,7 @@ export function createCuratorSync(rest: RestClient, store: Store, opts: CuratorS
         store.update((d) => {
           if (r?.restored) {
             d.quest.totalCoinsEarned = r.coins_earned;
+            d.quest.maxPossibleCoins = maxFromServer(r.coins_max, r.coins_earned);
             const at = Date.parse(r.completed_at);
             if (Number.isFinite(at)) d.quest.completedAt = at;
           }
@@ -125,9 +135,11 @@ export function createCuratorSync(rest: RestClient, store: Store, opts: CuratorS
       d.quest.completedAt = Number.isFinite(at) ? at : Date.now();
       d.quest.verificationCode = r.verification_code;
       d.quest.totalCoinsEarned = r.coins_earned;
+      d.quest.maxPossibleCoins = maxFromServer(r.coins_max, r.coins_earned);
       d.quest.isSyncedWithCurator = true;
       d.quest.lastSyncError = null;
       for (const i of ROOMS) d.quest.rooms[i].isSolved = true;
+      for (const pid of PUZZLE_IDS) d.quest.puzzles[pid].isSolved = true;
       d.arcade.isUnlocked = true;
       if (r.player_name) d.leaderboard.playerName = r.player_name;
       d.navigation.currentScreen = 'arcade';

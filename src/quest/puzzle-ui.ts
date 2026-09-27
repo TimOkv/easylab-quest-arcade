@@ -198,3 +198,113 @@ export function createTokenLine(host: HTMLElement, o: TokenLineOptions): SlotBoa
     destroy: () => host.replaceChildren(),
   };
 }
+
+export interface ChoiceOptions {
+  options: Card[];
+  label: string;
+  onChange(picked: string | null): void;
+}
+
+/** Выбор одного варианта из нескольких (радиокнопки). `values()` — `[выбранный id | null]`. */
+export function createChoice(host: HTMLElement, o: ChoiceOptions): SlotBoard {
+  let picked: string | null = null;
+  let locked = false;
+  const wrap = el('div', 'ezq-pz-choices');
+  wrap.setAttribute('role', 'radiogroup');
+  wrap.setAttribute('aria-label', o.label);
+  const btns = o.options.map((opt) => {
+    const b = button('ezq-pz-choice', opt.label);
+    b.setAttribute('role', 'radio');
+    b.addEventListener('click', () => {
+      if (locked) return;
+      picked = opt.id;
+      sync(true);
+    });
+    wrap.appendChild(b);
+    return { b, id: opt.id };
+  });
+  function sync(notify: boolean): void {
+    for (const { b, id } of btns) {
+      b.classList.toggle('ezq-pz-choice--picked', id === picked);
+      b.setAttribute('aria-checked', String(id === picked));
+      b.disabled = locked;
+    }
+    if (notify) o.onChange(picked);
+  }
+  host.appendChild(wrap);
+  sync(false);
+  return {
+    values: () => [picked],
+    reset() {
+      picked = null;
+      sync(true);
+    },
+    lock() {
+      locked = true;
+      host.classList.add('ezq-pz--solved');
+      sync(false);
+    },
+    destroy: () => host.replaceChildren(),
+  };
+}
+
+export interface CheckRowsOptions {
+  /** Колонки таблицы (подписи) и строки: id + значения ячеек. */
+  columns: string[];
+  rows: { id: string; cells: string[] }[];
+  label: string;
+  onChange(checked: string[]): void;
+}
+
+/** Таблица строк с отметками: тап по строке включает/выключает её. `values()` — отмеченные id по порядку строк. */
+export function createCheckRows(host: HTMLElement, o: CheckRowsOptions): SlotBoard {
+  const checked = new Set<string>();
+  let locked = false;
+  const table = el('div', 'ezq-pz-rows');
+  table.setAttribute('role', 'group');
+  table.setAttribute('aria-label', o.label);
+  const head = el('div', 'ezq-pz-rows__head');
+  for (const c of [...o.columns, '✔']) head.appendChild(el('span', 'ezq-pz-rows__cell', c));
+  table.appendChild(head);
+  const btns = o.rows.map((r) => {
+    const b = button('ezq-pz-row', '');
+    for (const c of r.cells) b.appendChild(el('span', 'ezq-pz-rows__cell', c));
+    const mark = el('span', 'ezq-pz-rows__cell ezq-pz-row__mark', '');
+    b.appendChild(mark);
+    b.addEventListener('click', () => {
+      if (locked) return;
+      if (checked.has(r.id)) checked.delete(r.id);
+      else checked.add(r.id);
+      sync(true);
+    });
+    table.appendChild(b);
+    return { b, mark, r };
+  });
+  const values = (): string[] => o.rows.filter((r) => checked.has(r.id)).map((r) => r.id);
+  function sync(notify: boolean): void {
+    for (const { b, mark, r } of btns) {
+      const on = checked.has(r.id);
+      b.classList.toggle('ezq-pz-row--checked', on);
+      b.setAttribute('aria-pressed', String(on));
+      b.setAttribute('aria-label', `${o.columns.map((c, i) => `${c} ${r.cells[i]}`).join(', ')}${on ? ' — отмечено' : ''}`);
+      mark.textContent = on ? '✔' : '';
+      b.disabled = locked;
+    }
+    if (notify) o.onChange(values());
+  }
+  host.appendChild(table);
+  sync(false);
+  return {
+    values,
+    reset() {
+      checked.clear();
+      sync(true);
+    },
+    lock() {
+      locked = true;
+      host.classList.add('ezq-pz--solved');
+      sync(false);
+    },
+    destroy: () => host.replaceChildren(),
+  };
+}

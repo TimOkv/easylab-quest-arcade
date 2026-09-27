@@ -1,5 +1,6 @@
 // Store состояния EasyQuestGameState с сохранением в localStorage['ezq_save_v1'].
-import type { EasyQuestGameState, KeyValueStorage, RoomIndex, ScreenName } from './types';
+import { PUZZLE_IDS, type EasyQuestGameState, type KeyValueStorage, type PuzzleId, type PuzzleState, type RoomIndex, type ScreenName } from './types';
+import { MAX_TOTAL_COINS, roomMaxReward } from './rules';
 
 export type { EasyQuestGameState } from './types';
 
@@ -9,9 +10,12 @@ export const CORRUPT_KEY = 'ezq_save_v1_corrupt';
 export const DEFAULT_DAILY_LIMIT = 3000;
 
 export function createInitialState(now: number, sessionId: string): EasyQuestGameState {
-  const room = <I extends string, T extends string, M extends number>(id: I, title: T, maxReward: M) => ({
-    id, title, maxReward, earnedCoins: 0, isSolved: false, attempts: 0, hintsUsed: 0 as const,
+  const room = (id: string, title: string, n: RoomIndex) => ({
+    id, title, maxReward: roomMaxReward(n), earnedCoins: 0, isSolved: false, attempts: 0, hintsUsed: 0,
   });
+  const puzzles = Object.fromEntries(
+    PUZZLE_IDS.map((pid): [PuzzleId, PuzzleState] => [pid, { earnedCoins: 0, isSolved: false, attempts: 0, hintsUsed: 0 }]),
+  ) as Record<PuzzleId, PuzzleState>;
   return {
     meta: {
       version: '1.0.0',
@@ -22,10 +26,11 @@ export function createInitialState(now: number, sessionId: string): EasyQuestGam
       platformStudentId: null,
       theme: 'dark',
     },
-    navigation: { currentScreen: 'quest', currentRoomIndex: 1, isAudioMuted: false },
+    navigation: { currentScreen: 'quest', currentRoomIndex: 1, isAudioMuted: false, isMusicMuted: false },
     quest: {
       totalCoinsEarned: 0,
-      maxPossibleCoins: 75,
+      maxPossibleCoins: MAX_TOTAL_COINS,
+      format: 2,
       isCompleted: false,
       completedAt: null,
       verificationCode: null,
@@ -33,11 +38,12 @@ export function createInitialState(now: number, sessionId: string): EasyQuestGam
       syncAttempts: 0,
       lastSyncError: null,
       rooms: {
-        1: room('room_variables', 'Рабочее место', 10),
-        2: room('room_conditions', 'Умный шкаф / Робот', 15),
-        3: room('room_loops', 'Библиотека знаний', 20),
-        4: room('room_functions', 'Командный центр маскота', 30),
+        1: room('room_variables', 'Спальня', 1),
+        2: room('room_conditions', 'Кухня', 2),
+        3: room('room_loops', 'Библиотека', 3),
+        4: room('room_functions', 'Чердак', 4),
       },
+      puzzles,
     },
     arcade: { isUnlocked: false, highScore: 0, totalRunsPlayed: 0, bestHeightPx: 0, lastRun: null },
     leaderboard: {
@@ -98,6 +104,16 @@ function hydrate(raw: unknown): EasyQuestGameState | null {
   const meta = raw.meta as Obj;
   const base = createInitialState(meta.createdAt as number, meta.sessionId as string);
   const merged = mergeInto(base, raw) as EasyQuestGameState;
+  const rawQuest = raw.quest as Obj;
+  if (rawQuest.format !== 2 && rawQuest.isCompleted !== true) {
+    // Незавершённый квест старого формата (4 загадки) начинается заново: ник, meta, звук — на месте.
+    merged.quest = base.quest;
+    merged.navigation.currentRoomIndex = 1;
+    merged.navigation.currentScreen = 'quest';
+  }
+  if (merged.quest.maxPossibleCoins !== 75 && merged.quest.maxPossibleCoins !== MAX_TOTAL_COINS)
+    merged.quest.maxPossibleCoins = rawQuest.format !== 2 ? 75 : MAX_TOTAL_COINS;
+  merged.quest.format = 2;
   const lr = merged.arcade.lastRun as unknown;
   if (lr !== null) {
     if (!isObj(lr) || typeof lr.score !== 'number') merged.arcade.lastRun = null;

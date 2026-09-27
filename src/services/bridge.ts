@@ -1,7 +1,7 @@
 // EasyLab Bridge: обмен postMessage с платформой (истории 76–79).
 // Входящие — только с разрешённых origin и только от родительского окна; исходящие — только
 // на проверенный origin родителя (из document.referrer или из пришедшего AUTH_INIT). Вне iframe — тишина.
-import type { RoomIndex, Theme } from '../core/types';
+import type { PuzzleId, RoomIndex, Theme } from '../core/types';
 
 export const BRIDGE_SOURCE = 'ezq';
 export const BRIDGE_VERSION = 1;
@@ -32,13 +32,25 @@ export interface QuestRoomReport {
   hintsUsed: number;
 }
 
+/** Итог одной загадки (8 записей; у прохождений старого квеста — пусто). */
+export interface QuestPuzzleReport {
+  id: PuzzleId;
+  room: RoomIndex;
+  earnedCoins: number;
+  maxReward: number;
+  attempts: number;
+  hintsUsed: number;
+}
+
 export interface QuestCompletedPayload {
   coinsEarned: number;
-  maxCoins: 75;
+  /** Максимум, из которого считались монеты: 150, у старых прохождений — 75. */
+  maxCoins: number;
   verificationCode: string;
   completedAt: string; // ISO 8601
   studentId: string | null;
   rooms: QuestRoomReport[];
+  puzzles: QuestPuzzleReport[];
 }
 
 export interface GameFinishedPayload {

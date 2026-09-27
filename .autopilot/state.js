@@ -11,7 +11,7 @@ window.STATE =
   "memoryFile": "CLAUDE.md",
   "skillDir": "/Users/timofejokunev/.claude/skills/autopilot",
   "startedAt": "2026-09-27T14:38:15+03:00",
-  "updatedAt": "2026-09-27T16:19:53+03:00",
+  "updatedAt": "2026-09-27T18:08:30+03:00",
   "finishedAt": null,
   "stages": [
     {
@@ -50,11 +50,14 @@ window.STATE =
     {
       "id": "build",
       "status": "active",
-      "startedAt": "2026-09-27T16:19:40+03:00"
+      "startedAt": "2026-09-27T16:19:40+03:00",
+      "note": "1 из 6 тасков готов"
     },
     {
       "id": "review",
-      "status": "pending"
+      "status": "active",
+      "startedAt": "2026-09-27T16:23:30+03:00",
+      "note": "проверено 1 из 6"
     },
     {
       "id": "final",
@@ -97,7 +100,7 @@ window.STATE =
         "src/services/curator.ts",
         "src/services/bridge.ts"
       ],
-      "status": "in-progress",
+      "status": "review",
       "retries": 0,
       "repairs": 0,
       "handoffs": 0,
@@ -119,11 +122,26 @@ window.STATE =
         "src/verify/",
         "tests/sql/"
       ],
-      "status": "in-progress",
+      "status": "done",
       "retries": 0,
       "repairs": 0,
       "handoffs": 0,
-      "startedAt": "2026-09-27T16:19:53+03:00"
+      "startedAt": "2026-09-27T16:19:53+03:00",
+      "finishedAt": "2026-09-27T16:25:07+03:00",
+      "commit": "50b1389",
+      "tests": {
+        "passed": 48,
+        "failed": 0
+      },
+      "files": [
+        "supabase/schema.sql",
+        "src/verify/page.ts",
+        "integrations/google-apps-script/Code.gs",
+        "tests/sql/schema.test.ts",
+        "tests/verify-page.test.ts",
+        "docs/SUPABASE_SETUP.md",
+        "docs/GOOGLE_SHEETS.md"
+      ]
     },
     {
       "id": "03",
@@ -253,10 +271,16 @@ window.STATE =
     "fixed": 3,
     "notes": "«ходил сам» — ответ 1 внесён в бриф; декор оживает анимацией; эталон расписан в истории 28"
   },
-  "concerns": [],
+  "concerns": [
+    "T02 docs/SUPABASE_SETUP.md:47 — цитирует «Реестр не принял данные — покажи код куратору», которого пока нет в UI (закроют T01/T05)",
+    "T02 supabase/schema.sql — максимум 150 записан 4 раза (DEFAULT, INSERT, CHECK, guard)",
+    "T02 supabase/schema.sql — цикл снятия CHECK по like %coins_earned% снимет и будущие ограничения",
+    "T02 Code.gs:112 — столбец монет: числа в старых строках, текст «N из M» в новых — сумма/сортировка в таблице ломается",
+    "T02 тесты — payload вебхука с coins_max ничем не проверен (в PGlite нет pg_net)"
+  ],
   "reviewers": {
-    "manifestSpec": null,
-    "craft": null
+    "manifestSpec": "rev-ms (a566482ccc494e854)",
+    "craft": "rev-craft (a157b2e4b3c7b3088)"
   },
   "blind": null
 }

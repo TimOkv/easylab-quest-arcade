@@ -1,25 +1,39 @@
 // Чистые правила: монеты, код EZ-XXXX, ник, клиентский античит. Без DOM и без состояния.
-import type { HintsUsed, RejectReason, RoomIndex } from './types';
+import { PUZZLES_BY_ROOM, type HintsUsed, type PuzzleId, type RejectReason, type RoomIndex } from './types';
 
-// ---------------------------------------------------------------- монеты (§3)
+// ---------------------------------------------------------------- монеты (§3, таблица «Монеты»)
 
-/** Награда комнаты по номеру верной попытки: [1-я, 2-я, 3+]. */
-export const REWARDS: Readonly<Record<RoomIndex, readonly [number, number, number]>> = {
+type RewardRow = readonly [number, number, number];
+
+/** Пул комнаты по номеру верной попытки: [1-я, 2-я, 3+]. Каждая загадка комнаты получает этот пул. */
+const ROOM_REWARDS: Readonly<Record<RoomIndex, RewardRow>> = {
   1: [10, 7, 5],
   2: [15, 11, 8],
   3: [20, 14, 10],
   4: [30, 22, 15],
 };
 
-export const MAX_TOTAL_COINS = 75;
+/** Награда загадки по номеру верной попытки: [1-я, 2-я, 3+]. */
+export const PUZZLE_REWARDS: Readonly<Record<PuzzleId, RewardRow>> = Object.fromEntries(
+  ([1, 2, 3, 4] as const).flatMap((room) => PUZZLES_BY_ROOM[room].map((pid) => [pid, ROOM_REWARDS[room]])),
+) as Record<PuzzleId, RewardRow>;
+
+/** Максимум квеста из 8 загадок (старые прохождения хранят свой — 75). */
+export const MAX_TOTAL_COINS = 150;
+
+/** Максимум комнаты = сумма пулов двух её загадок (20 / 30 / 40 / 60). */
+export function roomMaxReward(room: RoomIndex): number {
+  return PUZZLES_BY_ROOM[room].reduce((sum, pid) => sum + PUZZLE_REWARDS[pid][0], 0);
+}
 
 /**
- * Монеты за комнату. `attempts` — число нажатий «Проверить», включая верное.
+ * Монеты за загадку. `attempts` — число нажатий «Проверить», включая верное.
  * Вторая подсказка обнуляет награду; результат никогда не меньше нуля.
  */
-export function rewardFor(room: RoomIndex, attempts: number, hintsUsed: HintsUsed | number): number {
+export function rewardFor(puzzleId: PuzzleId, attempts: number, hintsUsed: HintsUsed | number): number {
   if (hintsUsed >= 2) return 0;
-  const row = REWARDS[room];
+  const row = PUZZLE_REWARDS[puzzleId];
+  if (!row) return 0;
   const n = Number.isFinite(attempts) ? Math.floor(attempts) : 1;
   const col = Math.min(Math.max(n, 1), 3) - 1;
   return Math.max(0, row[col]);

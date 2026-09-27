@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
-  REWARDS,
+  PUZZLE_REWARDS,
+  MAX_TOTAL_COINS,
+  roomMaxReward,
   rewardFor,
   generateVerificationCode,
   isValidVerificationCode,
@@ -11,40 +13,44 @@ import {
   MIN_RUN_SECONDS,
   MAX_SCORE,
 } from '../src/core/rules';
+import type { PuzzleId } from '../src/core/types';
 
-describe('rewardFor — таблица монет (Решения §3)', () => {
-  // Таблица из спецификации, история 25: [10,7,5] / [15,11,8] / [20,14,10] / [30,22,15]
-  const table: Array<[1 | 2 | 3 | 4, number, number]> = [
-    [1, 1, 10], [1, 2, 7], [1, 3, 5],
-    [2, 1, 15], [2, 2, 11], [2, 3, 8],
-    [3, 1, 20], [3, 2, 14], [3, 3, 10],
-    [4, 1, 30], [4, 2, 22], [4, 3, 15],
-  ];
-  it.each(table)('комната %i, попытка %i → %i', (room, attempts, expected) => {
-    expect(rewardFor(room, attempts, 0)).toBe(expected);
+// Ожидания — таблица «Монеты» спецификации: пул загадки = прежний пул её комнаты.
+const ALL: PuzzleId[] = ['var_types', 'var_assign', 'if_fridge', 'and_kettle', 'for_shelf', 'while_pc', 'fn_play', 'fn_mission'];
+
+describe('rewardFor — монеты за загадку (таблица «Монеты»)', () => {
+  it.each([
+    ['var_types', [10, 7, 5]], ['var_assign', [10, 7, 5]],
+    ['if_fridge', [15, 11, 8]], ['and_kettle', [15, 11, 8]],
+    ['for_shelf', [20, 14, 10]], ['while_pc', [20, 14, 10]],
+    ['fn_play', [30, 22, 15]], ['fn_mission', [30, 22, 15]],
+  ] as const)('%s: 1-я / 2-я / 3-я попытка → %j', (pid, row) => {
+    expect([1, 2, 3].map((a) => rewardFor(pid, a, 0))).toEqual(row);
+    expect(PUZZLE_REWARDS[pid]).toEqual(row);
   });
 
   it('3+ попытка = третья колонка', () => {
-    expect(rewardFor(1, 7, 0)).toBe(5);
-    expect(rewardFor(4, 40, 0)).toBe(15);
+    expect(rewardFor('var_assign', 7, 0)).toBe(5);
+    expect(rewardFor('fn_play', 40, 0)).toBe(15);
   });
 
   it('первая подсказка не снижает награду сама по себе', () => {
-    expect(rewardFor(2, 2, 1)).toBe(11);
+    expect(rewardFor('and_kettle', 2, 1)).toBe(11);
   });
 
-  it('вторая подсказка → 0 монет', () => {
-    expect(rewardFor(1, 1, 2)).toBe(0);
-    expect(rewardFor(4, 3, 2)).toBe(0);
+  it('вторая подсказка → 0 монет за эту загадку', () => {
+    expect(rewardFor('var_types', 1, 2)).toBe(0);
+    expect(rewardFor('fn_mission', 3, 2)).toBe(0);
   });
 
-  it('никогда не меньше нуля и максимум 75', () => {
-    for (const room of [1, 2, 3, 4] as const) {
-      for (let a = 0; a < 10; a++) {
-        for (const h of [0, 1, 2] as const) expect(rewardFor(room, a, h)).toBeGreaterThanOrEqual(0);
-      }
-    }
-    expect(REWARDS[1][0] + REWARDS[2][0] + REWARDS[3][0] + REWARDS[4][0]).toBe(75);
+  it('никогда не меньше нуля; всё с первой попытки = 150', () => {
+    for (const pid of ALL) for (let a = 0; a < 10; a++) for (const h of [0, 1, 2] as const) expect(rewardFor(pid, a, h)).toBeGreaterThanOrEqual(0);
+    expect(ALL.reduce((sum, pid) => sum + rewardFor(pid, 1, 0), 0)).toBe(150);
+    expect(MAX_TOTAL_COINS).toBe(150);
+  });
+
+  it('максимум комнаты = сумма пулов двух её загадок: 20 / 30 / 40 / 60', () => {
+    expect([1, 2, 3, 4].map((r) => roomMaxReward(r as 1 | 2 | 3 | 4))).toEqual([20, 30, 40, 60]);
   });
 });
 
