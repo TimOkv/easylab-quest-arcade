@@ -4,7 +4,7 @@
 import './quest.css';
 import type { Store } from '../core/state';
 import { PUZZLES_BY_ROOM, roomOfPuzzle, type EasyQuestGameState, type PuzzleId, type RoomIndex } from '../core/types';
-import { PLAYER_NAME_MAX } from '../core/rules';
+import { PLAYER_NAME_MAX, hasLocalBreakdown, isLegacyFormat } from '../core/rules';
 import type { Sfx, SfxName } from '../services/sfx';
 import type { Music } from '../services/music';
 import { copyText, createMuteButton, createMusicButton, fitStage, showToast } from '../app/shell';
@@ -509,6 +509,16 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     if (mode !== 'triumph') draw();
   }
 
+  /** Цвет кольца-метки клика — токен `--ezq-gold` (canvas не понимает var(), читаем значение с корня). */
+  let markerColor: string | null = null;
+  const tokenColor = (name: string): string => {
+    try {
+      return getComputedStyle(root).getPropertyValue(name).trim();
+    } catch {
+      return '';
+    }
+  };
+
   function draw(): void {
     const ctx = scene.ctx;
     if (!ctx) return;
@@ -520,7 +530,8 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
       else {
         ctx.save();
         ctx.globalAlpha = 1 - k;
-        ctx.strokeStyle = '#ffc933';
+        markerColor ||= tokenColor('--ezq-gold');
+        if (markerColor) ctx.strokeStyle = markerColor;
         ctx.lineWidth = 5;
         ctx.beginPath();
         ctx.ellipse(marker.p.x, marker.p.y, 14 + k * 18, (14 + k * 18) * 0.5, 0, 0, Math.PI * 2);
@@ -997,6 +1008,41 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     }
   }
 
+  let triumphRefs: { leadText: HTMLElement; table: HTMLElement; codeEl: HTMLElement } | null = null;
+
+  /**
+   * Итог на триумфе: монеты, код и суммы комнат. Перерисовывается, когда сервер подменил прохождение
+   * (register → restored: true): у восстановленного итог серверный, а местные комнаты к нему не относятся — их не показываем.
+   */
+  function renderTriumphResult(s: EasyQuestGameState): void {
+    if (!triumphRefs) return;
+    const { leadText, table, codeEl } = triumphRefs;
+    leadText.textContent = `Ты заработал ${s.quest.totalCoinsEarned} EasyCoins из ${s.quest.maxPossibleCoins} возможных!`;
+    const code = s.quest.verificationCode ?? '';
+    codeEl.textContent = code;
+    codeEl.setAttribute('aria-label', `Личный ID ${code.split('').join(' ')}`);
+    table.textContent = '';
+    table.hidden = !hasLocalBreakdown(s.quest);
+    if (table.hidden) return;
+    // Квест на 75: одна загадка в комнате, по загадкам данных нет — только суммы комнаты.
+    const legacy = isLegacyFormat(s.quest);
+    for (const n of ROOMS) {
+      const r = s.quest.rooms[n];
+      const li = el('li', 'ezq-triumph__room');
+      // Суммы комнаты: «с первой попытки» — каждая загадка решена с первого раза; «с подсказкой» —
+      // у какой-то загадки открыта вторая (большая) подсказка.
+      const pids = PUZZLES_BY_ROOM[n];
+      const tries = r.attempts <= (legacy ? 1 : pids.length) ? 'с первой попытки' : `попыток: ${r.attempts}`;
+      const bigHint = legacy ? r.hintsUsed >= 2 : pids.some((pid) => s.quest.puzzles[pid].hintsUsed >= 2);
+      li.append(
+        el('span', 'ezq-triumph__room-name', `${n}. ${ROOMS_DEF[n].title}`),
+        el('span', 'ezq-triumph__room-tries', bigHint ? `${tries}, с подсказкой` : tries),
+        el('b', 'ezq-triumph__room-coins', `${r.earnedCoins} / ${r.maxReward}`),
+      );
+      table.appendChild(li);
+    }
+  }
+
   function showTriumph(): void {
     if (triumph) return;
     const s = store.get();
@@ -1009,8 +1055,6 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     renderAction();
     music?.duck(false);
     sfx.play('fanfare');
-    const total = s.quest.totalCoinsEarned;
-    const code = s.quest.verificationCode ?? '';
 
     triumph = el('div', 'ezq-triumph');
     const card = el('div', 'ezq-triumph__card ezq-scroll');
@@ -1021,35 +1065,16 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     const title = el('h2', 'ezq-triumph__title', 'Поздравляем!');
     title.id = 'ezq-triumph-title';
     const lead = el('p', 'ezq-triumph__lead');
-    lead.append(coinIcon('ezq-coin ezq-coin--lg'), el('span', '', `Ты заработал ${total} EasyCoins из ${s.quest.maxPossibleCoins} возможных!`));
+    const leadText = el('span', '');
+    lead.append(coinIcon('ezq-coin ezq-coin--lg'), leadText);
     const name = s.leaderboard.playerName;
-
     const table = el('ul', 'ezq-triumph__rooms');
-    for (const n of ROOMS) {
-      const r = s.quest.rooms[n];
-      const li = el('li', 'ezq-triumph__room');
-      // Суммы комнаты: «с первой попытки» — каждая загадка решена с первого раза; «с подсказкой» —
-      // у какой-то загадки открыта вторая (большая) подсказка.
-      // Старое завершённое прохождение (максимум 75): одна загадка на комнату, по загадкам данных нет.
-      const legacy = s.quest.maxPossibleCoins === 75;
-      const pids = PUZZLES_BY_ROOM[n];
-      const tries = r.attempts <= (legacy ? 1 : pids.length) ? 'с первой попытки' : `попыток: ${r.attempts}`;
-      const bigHint = legacy ? r.hintsUsed >= 2 : pids.some((pid) => s.quest.puzzles[pid].hintsUsed >= 2);
-      li.append(
-        el('span', 'ezq-triumph__room-name', `${n}. ${ROOMS_DEF[n].title}`),
-        el('span', 'ezq-triumph__room-tries', bigHint ? `${tries}, с подсказкой` : tries),
-        el('b', 'ezq-triumph__room-coins', `${r.earnedCoins} / ${r.maxReward}`),
-      );
-      table.appendChild(li);
-    }
-
     const codeCap = el('p', 'ezq-triumph__code-cap', name ? `${name}, это твой личный ID для куратора` : 'Твой личный ID для куратора');
-    const codeEl = el('div', 'ezq-triumph__code', code);
-    codeEl.setAttribute('aria-label', `Личный ID ${code.split('').join(' ')}`);
+    const codeEl = el('div', 'ezq-triumph__code');
     const copyBtn = button('ezq-btn ezq-triumph__copy', 'Скопировать личный ID для куратора');
     copyBtn.addEventListener('click', async () => {
       sfx.play('click');
-      const okCopy = await copyText(code);
+      const okCopy = await copyText(store.get().quest.verificationCode ?? '');
       if (okCopy) {
         copyBtn.textContent = 'Скопировано ✓';
         copyBtn.classList.add('ezq-triumph__copy--done');
@@ -1068,6 +1093,8 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     });
     syncLine = el('p', 'ezq-triumph__sync');
     renderSync(s);
+    triumphRefs = { leadText, table, codeEl };
+    renderTriumphResult(s);
 
     const arcadeBtn = button('ezq-btn ezq-btn--big ezq-btn--arcade', 'Сыграть в Аркаду и войти в ТОП-3!');
     arcadeBtn.addEventListener('click', () => {
@@ -1129,6 +1156,10 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     renderHud(s);
     renderObjects(s);
     if (s.quest.isSyncedWithCurator !== prev.quest.isSyncedWithCurator || s.quest.lastSyncError !== prev.quest.lastSyncError) renderSync(s);
+    const q = s.quest;
+    const pq = prev.quest;
+    if (q.isRestored !== pq.isRestored || q.totalCoinsEarned !== pq.totalCoinsEarned || q.maxPossibleCoins !== pq.maxPossibleCoins || q.verificationCode !== pq.verificationCode)
+      renderTriumphResult(s);
     if (s.quest.isCompleted && !triumph && mode !== 'puzzle' && !finaleCued) showTriumph();
   });
 

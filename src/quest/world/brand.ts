@@ -49,11 +49,14 @@ const LOGOS: Record<BrandKind, string> = {
       loadingSign(60, 34, 21, EASYCODE_BLUE) +
       word(60, 80, 21, '#FFFFFF', EASYCODE_BLUE),
   ),
-  // магнит на холодильнике: только знак на белом круге
+  // магнит на холодильнике: белая плашка-магнитик, знак и слово в строку (слово растянуто textLength —
+  // ширина не зависит от шрифта, «easycode» читается и на телефоне)
   magnet: svg(
-    '0 0 40 40',
-    `<circle cx="20" cy="20" r="18.5" fill="#FFFFFF" stroke="#D5E4FF" stroke-width="1.5"/>` +
-      loadingSign(20, 20, 12.5, EASYCODE_BLUE),
+    '0 0 110 40',
+    `<rect x="1" y="1" width="108" height="38" rx="9" fill="#FFFFFF" stroke="#D5E4FF" stroke-width="1.5"/>` +
+      loadingSign(19, 20, 12, EASYCODE_BLUE) +
+      `<text x="36" y="26" font-family="${FONT}" font-weight="700" font-size="16" textLength="68" lengthAdjust="spacingAndGlyphs">` +
+      `<tspan fill="#0A1230">easy</tspan><tspan fill="${EASYCODE_BLUE}">code</tspan></text>`,
   ),
   // постер на чердаке: знак и слово на синем
   poster: svg(

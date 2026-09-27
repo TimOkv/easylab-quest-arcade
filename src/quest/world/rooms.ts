@@ -184,7 +184,7 @@ const KITCHEN: RoomDef = {
       radius: 60,
       puzzleId: 'if_fridge',
       brand: 'magnet',
-      brandRect: r(952, 404, 980, 432),
+      brandRect: r(894, 406, 1004, 446),
     },
     { id: 'kettle', label: 'Чайник на плите', rect: r(248, 392, 306, 454), approach: p(430, 530), radius: 64, puzzleId: 'and_kettle' },
     {

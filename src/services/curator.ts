@@ -2,7 +2,7 @@
 // перевыпуск кода при CODE_TAKEN, восстановление по student_id (G03).
 import { PUZZLE_IDS, type CuratorSync, type RoomIndex } from '../core/types';
 import type { Store } from '../core/state';
-import { MAX_TOTAL_COINS, generateVerificationCode, isValidVerificationCode } from '../core/rules';
+import { generateVerificationCode, isValidVerificationCode, maxCoinsFromServer } from '../core/rules';
 import { NetworkError, RpcError, type RestClient } from './rest';
 
 export interface CuratorSyncOptions {
@@ -30,12 +30,6 @@ interface RestoreResponse {
   player_name: string;
   completed_at: string;
   coins_max?: number;
-}
-
-/** Максимум записи реестра: из `coins_max`, а у ответа старого сервера — 75, если монет не больше 75. */
-function maxFromServer(coinsMax: unknown, coins: number): 75 | 150 {
-  if (coinsMax === 75 || coinsMax === MAX_TOTAL_COINS) return coinsMax;
-  return coins <= 75 ? 75 : MAX_TOTAL_COINS;
 }
 
 export const MAX_CODE_REISSUES = 5;
@@ -87,11 +81,17 @@ export function createCuratorSync(rest: RestClient, store: Store, opts: CuratorS
           p_completed_at: new Date(q.completedAt ?? Date.now()).toISOString(),
         });
         // Сервер может выдать другой код: запись этого ученика (restored) или замена занятого кода.
-        if (r?.verification_code && isValidVerificationCode(r.verification_code)) setCode(r.verification_code);
+        // Код и серверное прохождение пишутся одним update, и только потом onCodeChanged — иначе повторное
+        // EASYLAB_QUEST_COMPLETED ушло бы с новым кодом, но с локальными монетами и загадками.
+        const prevCode = q.verificationCode;
+        const code = r?.verification_code && isValidVerificationCode(r.verification_code) ? r.verification_code : null;
         store.update((d) => {
+          if (code) d.quest.verificationCode = code;
           if (r?.restored) {
+            // Серверное прохождение вместо локального: локальные записи по загадкам к этим монетам не относятся.
             d.quest.totalCoinsEarned = r.coins_earned;
-            d.quest.maxPossibleCoins = maxFromServer(r.coins_max, r.coins_earned);
+            d.quest.maxPossibleCoins = maxCoinsFromServer(r.coins_max, r.coins_earned);
+            d.quest.isRestored = true;
             const at = Date.parse(r.completed_at);
             if (Number.isFinite(at)) d.quest.completedAt = at;
           }
@@ -99,6 +99,7 @@ export function createCuratorSync(rest: RestClient, store: Store, opts: CuratorS
           d.quest.syncAttempts += 1;
           d.quest.lastSyncError = null;
         });
+        if (code && code !== prevCode) opts.onCodeChanged?.(code);
         return 'synced';
       } catch (e) {
         if (e instanceof RpcError && e.code === 'CODE_TAKEN' && reissues < MAX_CODE_REISSUES) {
@@ -135,7 +136,8 @@ export function createCuratorSync(rest: RestClient, store: Store, opts: CuratorS
       d.quest.completedAt = Number.isFinite(at) ? at : Date.now();
       d.quest.verificationCode = r.verification_code;
       d.quest.totalCoinsEarned = r.coins_earned;
-      d.quest.maxPossibleCoins = maxFromServer(r.coins_max, r.coins_earned);
+      d.quest.maxPossibleCoins = maxCoinsFromServer(r.coins_max, r.coins_earned);
+      d.quest.isRestored = true;
       d.quest.isSyncedWithCurator = true;
       d.quest.lastSyncError = null;
       for (const i of ROOMS) d.quest.rooms[i].isSolved = true;

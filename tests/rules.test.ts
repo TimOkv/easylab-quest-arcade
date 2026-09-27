@@ -12,6 +12,11 @@ import {
   MAX_POINTS_PER_SECOND,
   MIN_RUN_SECONDS,
   MAX_SCORE,
+  LEGACY_MAX_COINS,
+  isLegacyFormat,
+  hasLocalBreakdown,
+  hasPuzzleRecords,
+  maxCoinsFromServer,
 } from '../src/core/rules';
 import type { PuzzleId } from '../src/core/types';
 
@@ -159,5 +164,28 @@ describe('isRunPlausible — клиентский античит', () => {
     expect(isRunPlausible({ score: 50001, timeSpentSeconds: 1000 })).toEqual({ ok: false, reason: 'SCORE_RANGE' });
     expect(isRunPlausible({ score: -1, timeSpentSeconds: 10 })).toEqual({ ok: false, reason: 'SCORE_RANGE' });
     expect(isRunPlausible({ score: Number.NaN, timeSpentSeconds: 10 })).toEqual({ ok: false, reason: 'SCORE_RANGE' });
+  });
+});
+
+describe('формат на 75, восстановленное с сервера, максимум из ответа сервера', () => {
+  it('isLegacyFormat — только максимум 75; hasLocalBreakdown — только не восстановленное; hasPuzzleRecords — оба условия', () => {
+    expect(LEGACY_MAX_COINS).toBe(75);
+    expect(isLegacyFormat({ maxPossibleCoins: 150 })).toBe(false);
+    expect(isLegacyFormat({ maxPossibleCoins: 75 })).toBe(true);
+    expect(hasLocalBreakdown({ isRestored: false })).toBe(true);
+    expect(hasLocalBreakdown({ isRestored: true })).toBe(false);
+    expect(hasPuzzleRecords({ maxPossibleCoins: 150, isRestored: false })).toBe(true);
+    expect(hasPuzzleRecords({ maxPossibleCoins: 75, isRestored: false })).toBe(false);
+    expect(hasPuzzleRecords({ maxPossibleCoins: 150, isRestored: true })).toBe(false);
+    expect(hasPuzzleRecords({ maxPossibleCoins: 75, isRestored: true })).toBe(false);
+  });
+
+  it('maxCoinsFromServer: coins_max 75/150 — как есть; без него — 75 при монетах ≤ 75, иначе 150', () => {
+    expect(maxCoinsFromServer(75, 120)).toBe(75);
+    expect(maxCoinsFromServer(150, 10)).toBe(150);
+    expect(maxCoinsFromServer(undefined, 75)).toBe(75);
+    expect(maxCoinsFromServer(undefined, 76)).toBe(150);
+    expect(maxCoinsFromServer(100, 40)).toBe(75);
+    expect(maxCoinsFromServer('150', 90)).toBe(150);
   });
 });

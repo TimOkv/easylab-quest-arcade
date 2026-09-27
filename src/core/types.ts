@@ -171,6 +171,11 @@ export interface EasyQuestGameState {
     lastSyncError: string | null; // §2
     rooms: QuestRooms;
     puzzles: Record<PuzzleId, PuzzleState>;
+    /**
+     * Прохождение взято с сервера (restore_by_student или ответ register с `restored: true`): монеты и код —
+     * серверные, местной разбивки по комнатам и загадкам у него нет. Читать через `hasLocalBreakdown` / `hasPuzzleRecords` из `core/rules`. // §2
+     */
+    isRestored: boolean;
   };
   arcade: {
     isUnlocked: boolean;

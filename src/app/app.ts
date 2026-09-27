@@ -2,7 +2,7 @@
 // и проводка сервисов: реестр куратора (с повторами), рейтинг (с очередью), мост EasyLab, G03.
 import { createStore, type Store } from '../core/state';
 import { PUZZLE_IDS, roomOfPuzzle, type KeyValueStorage, type RunResult, type ScreenName, type SubmitOutcome, type EasyQuestGameState, type RoomIndex } from '../core/types';
-import { MAX_TOTAL_COINS, PLAYER_NAME_MAX, PUZZLE_REWARDS, validatePlayerName } from '../core/rules';
+import { PLAYER_NAME_MAX, PUZZLE_REWARDS, hasLocalBreakdown, hasPuzzleRecords, validatePlayerName } from '../core/rules';
 import { createAudioContextProvider, createSfx, type Sfx } from '../services/sfx';
 import { createMusic, type Music } from '../services/music';
 import { createRestClientFromEnv, NetworkError, type RestClient } from '../services/rest';
@@ -65,18 +65,20 @@ export function questCompletedPayload(s: EasyQuestGameState): QuestCompletedPayl
     verificationCode: q.verificationCode,
     completedAt: new Date(q.completedAt).toISOString(),
     studentId: s.meta.platformStudentId,
-    rooms: ROOMS.map((room) => {
-      const r = q.rooms[room];
-      return { room, id: r.id, earnedCoins: r.earnedCoins, maxReward: r.maxReward, attempts: r.attempts, hintsUsed: r.hintsUsed };
-    }),
-    // У прохождений старого квеста (максимум 75) детализации по 8 загадкам нет.
-    puzzles:
-      q.maxPossibleCoins === MAX_TOTAL_COINS
-        ? PUZZLE_IDS.map((id) => {
-            const p = q.puzzles[id];
-            return { id, room: roomOfPuzzle(id)!, earnedCoins: p.earnedCoins, maxReward: PUZZLE_REWARDS[id][0], attempts: p.attempts, hintsUsed: p.hintsUsed };
-          })
-        : [],
+    // Восстановленное с сервера: итог серверный, местные комнаты к нему не относятся — разбивка неизвестна, [].
+    rooms: hasLocalBreakdown(q)
+      ? ROOMS.map((room) => {
+          const r = q.rooms[room];
+          return { room, id: r.id, earnedCoins: r.earnedCoins, maxReward: r.maxReward, attempts: r.attempts, hintsUsed: r.hintsUsed };
+        })
+      : [],
+    // Записей по 8 загадкам нет у квеста на 75 и у восстановленного с сервера.
+    puzzles: hasPuzzleRecords(q)
+      ? PUZZLE_IDS.map((id) => {
+          const p = q.puzzles[id];
+          return { id, room: roomOfPuzzle(id)!, earnedCoins: p.earnedCoins, maxReward: PUZZLE_REWARDS[id][0], attempts: p.attempts, hintsUsed: p.hintsUsed };
+        })
+      : [],
   };
 }
 

@@ -20,6 +20,35 @@ export const PUZZLE_REWARDS: Readonly<Record<PuzzleId, RewardRow>> = Object.from
 
 /** Максимум квеста из 8 загадок (старые прохождения хранят свой — 75). */
 export const MAX_TOTAL_COINS = 150;
+/** Максимум старого квеста из 4 загадок (по одной на комнату). */
+export const LEGACY_MAX_COINS = 75;
+
+/** Прохождение старого квеста на 75: по одной загадке в комнате, записей по 8 загадкам нет. */
+export function isLegacyFormat(quest: { readonly maxPossibleCoins: number }): boolean {
+  return quest.maxPossibleCoins !== MAX_TOTAL_COINS;
+}
+
+/**
+ * Местная разбивка (комнаты, загадки) относится к итогу прохождения. У восстановленного с сервера
+ * (`isRestored`) итог серверный, а местные комнаты и загадки — пустые или от другого прохождения: их не показывать и не слать.
+ */
+export function hasLocalBreakdown(quest: { readonly isRestored: boolean }): boolean {
+  return !quest.isRestored;
+}
+
+/** Есть записи по 8 загадкам: сыграно здесь (не восстановлено) и не в старом формате на 75. */
+export function hasPuzzleRecords(quest: { readonly maxPossibleCoins: number; readonly isRestored: boolean }): boolean {
+  return hasLocalBreakdown(quest) && !isLegacyFormat(quest);
+}
+
+/**
+ * Максимум прохождения по ответу сервера: `coins_max` (75 или 150); у ответа старого сервера его нет —
+ * тогда 75, если монет не больше 75, иначе 150.
+ */
+export function maxCoinsFromServer(coinsMax: unknown, coins: number): typeof LEGACY_MAX_COINS | typeof MAX_TOTAL_COINS {
+  if (coinsMax === LEGACY_MAX_COINS || coinsMax === MAX_TOTAL_COINS) return coinsMax;
+  return coins <= LEGACY_MAX_COINS ? LEGACY_MAX_COINS : MAX_TOTAL_COINS;
+}
 
 /** Максимум комнаты = сумма пулов двух её загадок (20 / 30 / 40 / 60). */
 export function roomMaxReward(room: RoomIndex): number {

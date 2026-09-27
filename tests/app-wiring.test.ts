@@ -163,6 +163,49 @@ describe('app wiring', () => {
     expect(t.app.router?.current()).toBe('arcade');
   });
 
+  it('восстановленное с сервера прохождение на 150 (restoreByStudent): в QUEST_COMPLETED нет 8 нулевых записей puzzles', async () => {
+    const t = mount({
+      restore_by_student: () => ({ body: { verification_code: 'EZ-7K3P', coins_earned: 120, coins_max: 150, player_name: 'Миша', completed_at: '2026-09-20T09:00:00Z' } }),
+    });
+    t.parent.authInit({ studentId: 'stu-2' });
+    await t.app.ready;
+    await tick();
+    const s = t.app.store.get();
+    expect(s.quest).toMatchObject({ isCompleted: true, verificationCode: 'EZ-7K3P', totalCoinsEarned: 120, maxPossibleCoins: 150, isRestored: true });
+    const p = questCompletedPayload(s)!;
+    expect(p).toMatchObject({ coinsEarned: 120, maxCoins: 150, verificationCode: 'EZ-7K3P', studentId: 'stu-2' });
+    // Разбивка восстановленного неизвестна: ни комнат, ни загадок (docs/INTEGRATION.md).
+    expect(p.rooms).toEqual([]);
+    expect(p.puzzles).toEqual([]);
+  });
+
+  it('register ответил restored: true с другим кодом → повторное QUEST_COMPLETED с серверными кодом и монетами, без комнат и загадок', async () => {
+    const t = mount({
+      restore_by_student: () => ({ body: null }),
+      register_quest_completion: () => ({ body: { verification_code: 'EZ-7K3P', coins_earned: 120, coins_max: 150, completed_at: '2026-09-20T09:00:00Z', restored: true } }),
+    });
+    t.parent.authInit({ studentId: 'stu-3', name: 'Аня' });
+    await t.app.ready;
+    const ctx = t.last()!.ctx;
+    expect(ctx.controller.startQuest('Аня').ok).toBe(true);
+    for (const n of [1, 2, 3, 4] as RoomIndex[]) {
+      for (const pid of PUZZLES_BY_ROOM[n]) expect(ctx.controller.submit(pid, RIGHT[pid]).correct).toBe(true);
+      if (n < 4) ctx.controller.advance();
+    }
+    await tick();
+    await tick();
+    const sent = t.parent.posted.filter((m) => m.data.type === 'EASYLAB_QUEST_COMPLETED').map((m) => m.data.payload);
+    expect(sent).toHaveLength(2);
+    expect(sent[0]).toMatchObject({ coinsEarned: 150, maxCoins: 150 });
+    expect(sent[0].puzzles).toHaveLength(8);
+    expect(sent[0].rooms.map((r: { earnedCoins: number }) => r.earnedCoins)).toEqual([20, 30, 40, 60]);
+    expect(sent[1]).toMatchObject({ coinsEarned: 120, maxCoins: 150, verificationCode: 'EZ-7K3P', completedAt: '2026-09-20T09:00:00.000Z' });
+    // Местные комнаты (сумма 150) к серверному итогу 120 не относятся — разбивка неизвестна.
+    expect(sent[1].rooms).toEqual([]);
+    expect(sent[1].puzzles).toEqual([]);
+    expect(t.app.store.get().quest).toMatchObject({ verificationCode: 'EZ-7K3P', totalCoinsEarned: 120, isRestored: true, isSyncedWithCurator: true });
+  });
+
   it('без AUTH_INIT встроенный модуль ждёт не дольше authWaitMs и продолжает как гость; пройденный квест → старт в аркаде', async () => {
     const storage = new FakeStorage();
     const s = createInitialState(1, 'sess-x');

@@ -71,8 +71,8 @@ function spriteSheet(): void {
   const place: Array<[BrandKind, Rect]> = [
     ['screen', { x: 5, y: 5, w: 80, h: 51 }],
     ['screen', { x: 95, y: 5, w: 46, h: 88 }],
-    ['magnet', { x: 155, y: 5, w: 28, h: 28 }],
-    ['poster', { x: 195, y: 5, w: 66, h: 84 }],
+    ['magnet', { x: 155, y: 5, w: 110, h: 40 }],
+    ['poster', { x: 275, y: 5, w: 66, h: 84 }],
   ];
   for (const [kind, rect] of place) logos.append(brandBox(kind, rect, Zl));
   root.append(logos);

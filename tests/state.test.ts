@@ -180,6 +180,37 @@ describe('createStore — сохранение ezq_save_v1', () => {
     expect(Object.values(loaded.quest.puzzles).every((p) => !p.isSolved && p.attempts === 0 && p.earnedCoins === 0)).toBe(true);
   });
 
+  it('новое состояние — не восстановленное; сохранение до поля isRestored: оба пути восстановления распознаются по комнатам', () => {
+    expect(createInitialState(1, 's').quest.isRestored).toBe(false);
+    /** Завершённое сохранение формата 2 без isRestored; комнаты — [монеты, попытки]. */
+    const save = (total: number, rooms: Array<[number, number]>, extra: (s: Record<string, any>) => void = () => {}): FakeStorage => {
+      const s = createInitialState(500, 'sess-r') as unknown as Record<string, any>;
+      delete s.quest.isRestored;
+      Object.assign(s.quest, { isCompleted: true, completedAt: 900, verificationCode: 'EZ-7K3P', totalCoinsEarned: total });
+      rooms.forEach(([earnedCoins, attempts], i) => Object.assign(s.quest.rooms[i + 1], { earnedCoins, attempts, isSolved: true }));
+      extra(s);
+      const st = new FakeStorage();
+      st.setItem(SAVE_KEY, JSON.stringify(s));
+      return st;
+    };
+    // restoreByStudent: комнаты решены без попыток, итог серверный.
+    expect(loadState(save(61, [[0, 0], [0, 0], [0, 0], [0, 0]]))!.quest).toMatchObject({ isRestored: true, totalCoinsEarned: 61, maxPossibleCoins: 150 });
+    // register с restored: true: местные комнаты (сумма 146) остались, итог — серверные 120.
+    expect(loadState(save(120, [[20, 2], [26, 3], [40, 2], [60, 2]]))!.quest).toMatchObject({ isRestored: true, totalCoinsEarned: 120 });
+    // Сыграно здесь: сумма комнат равна итогу, попытки есть. Так же выглядит и непокрытый путь — register
+    // с restored: true, чей итог совпал с местной суммой (записано в state.ts): разбивка итогу не противоречит.
+    expect(loadState(save(146, [[20, 2], [26, 3], [40, 2], [60, 2]]))!.quest.isRestored).toBe(false);
+    // Явное значение из сохранения не пересчитывается.
+    expect(loadState(save(61, [[0, 0], [0, 0], [0, 0], [0, 0]], (s) => { s.quest.isRestored = false; }))!.quest.isRestored).toBe(false);
+    // Старый формат (на 75), восстановленный restoreByStudent до обновления.
+    const legacy = save(65, [[0, 0], [0, 0], [0, 0], [0, 0]], (s) => {
+      delete s.quest.format;
+      delete s.quest.puzzles;
+      s.quest.maxPossibleCoins = 75;
+    });
+    expect(loadState(legacy)!.quest).toMatchObject({ isRestored: true, maxPossibleCoins: 75, totalCoinsEarned: 65 });
+  });
+
   it('миграция: завершённый старый квест не трогается — монеты, код и максимум 75 на месте', () => {
     const storage = new FakeStorage();
     storage.setItem(SAVE_KEY, legacySave((s) => {
@@ -191,7 +222,7 @@ describe('createStore — сохранение ezq_save_v1', () => {
       s.arcade.highScore = 420;
     }));
     const loaded = loadState(storage)!;
-    expect(loaded.quest).toMatchObject({ isCompleted: true, completedAt: 900, verificationCode: 'EZ-AB2C', totalCoinsEarned: 72, maxPossibleCoins: 75, isSyncedWithCurator: true });
+    expect(loaded.quest).toMatchObject({ isCompleted: true, completedAt: 900, verificationCode: 'EZ-AB2C', totalCoinsEarned: 72, maxPossibleCoins: 75, isSyncedWithCurator: true, isRestored: false });
     expect([1, 2, 3, 4].map((n) => loaded.quest.rooms[n as 1 | 2 | 3 | 4].maxReward)).toEqual([10, 15, 20, 30]);
     expect(loaded.quest.rooms[1]).toMatchObject({ earnedCoins: 7, attempts: 2, isSolved: true });
     expect(loaded.navigation).toMatchObject({ currentScreen: 'arcade', currentRoomIndex: 4, isAudioMuted: true, isMusicMuted: false });

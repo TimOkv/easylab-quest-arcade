@@ -72,6 +72,29 @@ describe('createCuratorSync.syncNow', () => {
     expect(onCodeChanged).toHaveBeenCalledWith('EZ-ZZZZ');
   });
 
+  it('restored=true → прохождение помечено восстановленным; в onCodeChanged уже серверные код и монеты', async () => {
+    const srv = fakeServer({
+      register_quest_completion: () => ({ body: { verification_code: 'EZ-ZZZZ', coins_earned: 120, coins_max: 150, completed_at: '2023-11-01T10:00:00.000Z', restored: true } }),
+    });
+    const store = makeStore((d) => { d.quest.maxPossibleCoins = 150; });
+    const seen: unknown[] = [];
+    const onCodeChanged = (code: string) => {
+      const q = store.get().quest;
+      seen.push({ code, stored: q.verificationCode, coins: q.totalCoinsEarned, isRestored: q.isRestored });
+    };
+    expect(store.get().quest.isRestored).toBe(false);
+    expect(await createCuratorSync(srv.rest, store, { onCodeChanged }).syncNow()).toBe('synced');
+    expect(seen).toEqual([{ code: 'EZ-ZZZZ', stored: 'EZ-ZZZZ', coins: 120, isRestored: true }]);
+    expect(store.get().quest).toMatchObject({ isRestored: true, maxPossibleCoins: 150, isSyncedWithCurator: true });
+  });
+
+  it('restored=false → прохождение остаётся сыгранным здесь (isRestored: false)', async () => {
+    const srv = fakeServer({ register_quest_completion: okRegister });
+    const store = makeStore();
+    expect(await createCuratorSync(srv.rest, store).syncNow()).toBe('synced');
+    expect(store.get().quest.isRestored).toBe(false);
+  });
+
   it('restored=true с coins_max → максимум из записи сервера', async () => {
     const srv = fakeServer({
       register_quest_completion: () => ({ body: { verification_code: 'EZ-ZZZZ', coins_earned: 70, coins_max: 75, completed_at: '2023-11-01T10:00:00.000Z', restored: true } }),
@@ -112,7 +135,7 @@ describe('createCuratorSync.restoreByStudent', () => {
     });
     const store = makeStore((d) => { d.quest.isCompleted = false; d.quest.verificationCode = null; d.quest.completedAt = null; });
     expect(await createCuratorSync(srv.rest, store).restoreByStudent('st-9')).toBe(true);
-    expect(store.get().quest).toMatchObject({ maxPossibleCoins: expected, totalCoinsEarned: extra.coins_earned });
+    expect(store.get().quest).toMatchObject({ maxPossibleCoins: expected, totalCoinsEarned: extra.coins_earned, isRestored: true });
   });
 
   it('найдено на сервере → квест завершён с серверными кодом/монетами, аркада открыта', async () => {

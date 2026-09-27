@@ -49,7 +49,9 @@ export interface QuestCompletedPayload {
   verificationCode: string;
   completedAt: string; // ISO 8601
   studentId: string | null;
+  /** 4 суммы по комнатам; пусто у восстановленного с сервера — разбивка неизвестна (`hasLocalBreakdown`). */
   rooms: QuestRoomReport[];
+  /** 8 записей по загадкам; пусто у квеста на 75 и у восстановленного с сервера (`hasPuzzleRecords`). */
   puzzles: QuestPuzzleReport[];
 }
 

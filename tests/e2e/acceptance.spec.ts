@@ -50,7 +50,11 @@ for (const vp of VIEWPORTS) {
       await playQuest(page, 'Тимофей', vp.plan, {
         onRoom: async (tag) => shot(page, `quest-${tag}-${vp.name}`),
         eachRoom: async () => { if (vp.name === 'mobile') await expectNoHorizontalScroll(page); },
-        onWalk: async (tag) => shot(page, `${tag}-${vp.name}`, 'walk', tag === 'door-wipe' ? 0 : 400),
+        onWalk: async (tag) => {
+          // Комнаты 2–4 снимаем после карточки «Комната N из 4» (1,5 с): она закрывает середину сцены — магнит кухни.
+          if (process.env.EZQ_FINAL_SHOTS && /^room[234]$/.test(tag)) await expect(page.locator('.ezq-qcard')).toBeHidden({ timeout: 5_000 });
+          await shot(page, `${tag}-${vp.name}`, 'walk', tag === 'door-wipe' ? 0 : 400);
+        },
       });
 
       // ---- триумф: фактические монеты и личный ID

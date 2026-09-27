@@ -131,7 +131,7 @@ export function createMuteButton(store: Store, sfx: Sfx): HTMLButtonElement {
 
 /**
  * Кнопка 🎵: переключает `navigation.isMusicMuted` (только музыку; сохраняется в store, общая для экранов).
- * Выключенная — перечёркнута. Черта — inline-стилями, чтобы кнопка не зависела от CSS конкретного экрана.
+ * Выключенная — перечёркнута (`.ezq-music__slash` в app.css — общем CSS всех экранов, цвет — токен `--ezq-mute-slash`).
  */
 export function createMusicButton(store: Store): HTMLButtonElement {
   const btn = document.createElement('button');
@@ -142,19 +142,8 @@ export function createMusicButton(store: Store): HTMLButtonElement {
   icon.textContent = '🎵';
   icon.setAttribute('aria-hidden', 'true');
   const slash = document.createElement('span');
+  slash.className = 'ezq-music__slash';
   slash.setAttribute('aria-hidden', 'true');
-  Object.assign(slash.style, {
-    position: 'absolute',
-    left: '50%',
-    top: '50%',
-    width: '34px',
-    height: '4px',
-    borderRadius: '2px',
-    background: '#ff5a5a',
-    boxShadow: '0 0 0 1px rgba(0, 0, 0, 0.45)',
-    transform: 'translate(-50%, -50%) rotate(-45deg)',
-    pointerEvents: 'none',
-  });
   btn.append(icon, slash);
   followStore(btn, store, () => {
     const muted = store.get().navigation.isMusicMuted;

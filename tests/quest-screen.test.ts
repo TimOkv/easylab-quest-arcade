@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
 // Экран квеста: точечные DOM-проверки (остальное — e2e).
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { createStore } from '../src/core/state';
+import { createInitialState, createStore, SAVE_KEY } from '../src/core/state';
 import { createQuestController } from '../src/quest/controller';
 import { mountQuestScreen } from '../src/quest/screen';
-import type { PuzzleId } from '../src/core/types';
-import { FakeStorage } from './services/helpers';
+import { PUZZLES_BY_ROOM, type PuzzleId } from '../src/core/types';
+import { FakeStorage, fakeServer } from './services/helpers';
+import { createCuratorSync } from '../src/services/curator';
 
 const RIGHT: Record<PuzzleId, unknown> = {
   var_types: { name: 'izik', age: 'num12', likes: 'true' },
@@ -72,6 +73,68 @@ describe('экран квеста: триумф', () => {
     destroy = mountQuestScreen(host, { store, sfx: sfx as never, controller: c, isServerConfigured: false, onGoToArcade() {} }).destroy;
     const tries = [...host.querySelectorAll('.ezq-triumph__room-tries')].map((n) => n.textContent);
     expect(tries).toEqual(['с первой попытки', 'попыток: 3', 'попыток: 4', 'попыток: 3, с подсказкой']);
+  });
+});
+
+describe('экран квеста: триумф старого прохождения', () => {
+  it('квест на 75 из сохранения: «из 75 возможных», отметки и монеты — по суммам комнат (по загадкам данных нет)', () => {
+    // Сохранение старого квеста: 4 загадки по одной на комнату, без format и puzzles.
+    const old = createInitialState(500, 'old-sess') as unknown as Record<string, any>;
+    delete old.quest.format;
+    delete old.quest.puzzles;
+    delete old.quest.isRestored;
+    const rooms: Array<[number, number, number, number]> = [[7, 10, 2, 0], [15, 15, 1, 0], [20, 20, 1, 1], [30, 30, 3, 2]];
+    rooms.forEach(([earnedCoins, maxReward, attempts, hintsUsed], i) =>
+      Object.assign(old.quest.rooms[i + 1], { earnedCoins, maxReward, attempts, hintsUsed, isSolved: true }));
+    Object.assign(old.quest, { maxPossibleCoins: 75, totalCoinsEarned: 72, isCompleted: true, completedAt: 900, verificationCode: 'EZ-AB2C' });
+    old.leaderboard.playerName = 'Аня';
+    const storage = new FakeStorage();
+    storage.setItem(SAVE_KEY, JSON.stringify(old));
+    const store = createStore({ storage });
+    expect(store.get().quest).toMatchObject({ maxPossibleCoins: 75, isCompleted: true, isRestored: false });
+
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    destroy = mountQuestScreen(host, { store, sfx: sfx as never, controller: createQuestController(store), isServerConfigured: false, onGoToArcade() {} }).destroy;
+    expect(host.querySelector('.ezq-triumph__lead')?.textContent?.trim()).toBe('Ты заработал 72 EasyCoins из 75 возможных!');
+    const texts = (sel: string) => [...host.querySelectorAll(sel)].map((n) => n.textContent);
+    expect(texts('.ezq-triumph__room-tries')).toEqual(['попыток: 2', 'с первой попытки', 'с первой попытки', 'попыток: 3, с подсказкой']);
+    expect(texts('.ezq-triumph__room-coins')).toEqual(['7 / 10', '15 / 15', '20 / 20', '30 / 30']);
+    expect(host.querySelector('.ezq-triumph__code')?.textContent).toBe('EZ-AB2C');
+  });
+});
+
+describe('экран квеста: триумф восстановленного с сервера прохождения', () => {
+  it('register ответил restored: true, пока открыт триумф → серверные монеты и код, местные попытки и монеты по комнатам скрыты', async () => {
+    const store = createStore({ storage: new FakeStorage() });
+    const c = createQuestController(store);
+    expect(c.startQuest('Аня').ok).toBe(true);
+    for (const n of [1, 2, 3, 4] as const) {
+      if (n === 2) expect(c.submit('if_fridge', WRONG.if_fridge).correct).toBe(false);
+      for (const pid of PUZZLES_BY_ROOM[n]) expect(c.submit(pid, RIGHT[pid]).correct).toBe(true);
+      if (n < 4) expect(c.advance()).toBe(true);
+    }
+    expect(store.get().quest).toMatchObject({ isCompleted: true, totalCoinsEarned: 146 });
+
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    destroy = mountQuestScreen(host, { store, sfx: sfx as never, controller: c, isServerConfigured: true, onGoToArcade() {} }).destroy;
+    const texts = (sel: string) => [...host.querySelectorAll(sel)].map((n) => n.textContent);
+    // До ответа сервера — местное прохождение с разбивкой.
+    expect(host.querySelector('.ezq-triumph__lead')?.textContent?.trim()).toBe('Ты заработал 146 EasyCoins из 150 возможных!');
+    expect(texts('.ezq-triumph__room-coins')).toEqual(['20 / 20', '26 / 30', '40 / 40', '60 / 60']);
+
+    const srv = fakeServer({
+      register_quest_completion: () => ({ body: { verification_code: 'EZ-7K3P', coins_earned: 120, coins_max: 150, completed_at: '2026-09-20T09:00:00Z', restored: true } }),
+    });
+    expect(await createCuratorSync(srv.rest, store).syncNow()).toBe('synced');
+
+    expect(host.querySelector('.ezq-triumph__lead')?.textContent?.trim()).toBe('Ты заработал 120 EasyCoins из 150 возможных!');
+    expect(host.querySelector('.ezq-triumph__code')?.textContent).toBe('EZ-7K3P');
+    const table = host.querySelector<HTMLElement>('.ezq-triumph__rooms')!;
+    expect(table.hidden).toBe(true);
+    expect(texts('.ezq-triumph__room-tries')).toEqual([]);
+    expect(texts('.ezq-triumph__room-coins')).toEqual([]);
   });
 });
 

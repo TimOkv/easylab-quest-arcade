@@ -1,6 +1,6 @@
 // Store состояния EasyQuestGameState с сохранением в localStorage['ezq_save_v1'].
 import { PUZZLE_IDS, type EasyQuestGameState, type KeyValueStorage, type PuzzleId, type PuzzleState, type RoomIndex, type ScreenName } from './types';
-import { MAX_TOTAL_COINS, roomMaxReward } from './rules';
+import { LEGACY_MAX_COINS, MAX_TOTAL_COINS, roomMaxReward } from './rules';
 
 export type { EasyQuestGameState } from './types';
 
@@ -44,6 +44,7 @@ export function createInitialState(now: number, sessionId: string): EasyQuestGam
         4: room('room_functions', 'Чердак', 4),
       },
       puzzles,
+      isRestored: false,
     },
     arcade: { isUnlocked: false, highScore: 0, totalRunsPlayed: 0, bestHeightPx: 0, lastRun: null },
     leaderboard: {
@@ -111,8 +112,18 @@ function hydrate(raw: unknown): EasyQuestGameState | null {
     merged.navigation.currentRoomIndex = 1;
     merged.navigation.currentScreen = 'quest';
   }
-  if (merged.quest.maxPossibleCoins !== 75 && merged.quest.maxPossibleCoins !== MAX_TOTAL_COINS)
-    merged.quest.maxPossibleCoins = rawQuest.format !== 2 ? 75 : MAX_TOTAL_COINS;
+  if (merged.quest.maxPossibleCoins !== LEGACY_MAX_COINS && merged.quest.maxPossibleCoins !== MAX_TOTAL_COINS)
+    merged.quest.maxPossibleCoins = rawQuest.format !== 2 ? LEGACY_MAX_COINS : MAX_TOTAL_COINS;
+  if (typeof rawQuest.isRestored !== 'boolean' && merged.quest.isCompleted) {
+    // Сохранения до появления isRestored (любого формата) — оба пути восстановления видны по комнатам:
+    //  · restoreByStudent отмечал комнаты решёнными без единой попытки (сыгранное так выглядеть не может —
+    //    попытка пишется до решения);
+    //  · register с restored: true подменял итог серверным, а местные комнаты оставлял — их сумма расходится с итогом.
+    // Не отличить только register с серверным итогом, равным местной сумме: тогда разбивка итогу не противоречит.
+    const rooms = ROOMS.map((i) => merged.quest.rooms[i]);
+    const sum = rooms.reduce((acc, r) => acc + r.earnedCoins, 0);
+    merged.quest.isRestored = rooms.every((r) => r.isSolved && r.attempts === 0) || sum !== merged.quest.totalCoinsEarned;
+  }
   merged.quest.format = 2;
   const lr = merged.arcade.lastRun as unknown;
   if (lr !== null) {
