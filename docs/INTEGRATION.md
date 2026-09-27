@@ -58,7 +58,7 @@
    │ (ждёт AUTH_INIT до 1,5 с, потом стартует как гость;
    │  AUTH_INIT, пришедший позже, всё равно применится)
    │ … ученик решает 4 загадки …
-   │ ── EASYLAB_QUEST_COMPLETED {coinsEarned, verificationCode, …} ▶ │  начислить монеты
+   │ ── EASYLAB_QUEST_COMPLETED {coinsEarned, maxCoins, verificationCode, …} ▶ │  начислить монеты
    │ … ученик играет в аркаду …
    │ ── EASYLAB_GAME_FINISHED {score, highScore, …} ▶ │  после каждого забега
 ```
@@ -81,29 +81,45 @@
 
 ### `EASYLAB_QUEST_COMPLETED` (модуль → платформа)
 
-Отправляется один раз в момент решения 4-й загадки. Повторно — только если сервер выдал ученику другой код
-(совпадение кодов, редкость) — тогда платформе нужно обновить сохранённый код.
+Отправляется один раз в момент решения последней, 8-й загадки (по две в каждой из 4 комнат). Повторно — только
+если сервер выдал ученику другой код (совпадение кодов, редкость) — тогда платформе нужно обновить сохранённый код.
 
 ```json
 {
   "source": "ezq", "version": 1, "type": "EASYLAB_QUEST_COMPLETED",
   "payload": {
-    "coinsEarned": 65,
-    "maxCoins": 75,
+    "coinsEarned": 110,
+    "maxCoins": 150,
     "verificationCode": "EZ-7K3M",
-    "completedAt": "2026-09-26T18:52:39.219Z",
+    "completedAt": "2026-09-27T18:52:39.219Z",
     "studentId": "student-1024",
     "rooms": [
-      { "room": 1, "id": "room_variables",  "earnedCoins": 7,  "maxReward": 10, "attempts": 2, "hintsUsed": 0 },
-      { "room": 2, "id": "room_conditions", "earnedCoins": 8,  "maxReward": 15, "attempts": 3, "hintsUsed": 1 },
-      { "room": 3, "id": "room_loops",      "earnedCoins": 20, "maxReward": 20, "attempts": 1, "hintsUsed": 0 },
-      { "room": 4, "id": "room_functions",  "earnedCoins": 30, "maxReward": 30, "attempts": 1, "hintsUsed": 0 }
+      { "room": 1, "id": "room_variables",  "earnedCoins": 17, "maxReward": 20, "attempts": 3, "hintsUsed": 0 },
+      { "room": 2, "id": "room_conditions", "earnedCoins": 23, "maxReward": 30, "attempts": 4, "hintsUsed": 1 },
+      { "room": 3, "id": "room_loops",      "earnedCoins": 40, "maxReward": 40, "attempts": 2, "hintsUsed": 0 },
+      { "room": 4, "id": "room_functions",  "earnedCoins": 30, "maxReward": 60, "attempts": 3, "hintsUsed": 2 }
+    ],
+    "puzzles": [
+      { "id": "var_types",  "room": 1, "earnedCoins": 7,  "maxReward": 10, "attempts": 2, "hintsUsed": 0 },
+      { "id": "var_assign", "room": 1, "earnedCoins": 10, "maxReward": 10, "attempts": 1, "hintsUsed": 0 },
+      { "id": "if_fridge",  "room": 2, "earnedCoins": 8,  "maxReward": 15, "attempts": 3, "hintsUsed": 1 },
+      { "id": "and_kettle", "room": 2, "earnedCoins": 15, "maxReward": 15, "attempts": 1, "hintsUsed": 0 },
+      { "id": "for_shelf",  "room": 3, "earnedCoins": 20, "maxReward": 20, "attempts": 1, "hintsUsed": 0 },
+      { "id": "while_pc",   "room": 3, "earnedCoins": 20, "maxReward": 20, "attempts": 1, "hintsUsed": 0 },
+      { "id": "fn_play",    "room": 4, "earnedCoins": 0,  "maxReward": 30, "attempts": 2, "hintsUsed": 2 },
+      { "id": "fn_mission", "room": 4, "earnedCoins": 30, "maxReward": 30, "attempts": 1, "hintsUsed": 0 }
     ]
   }
 }
 ```
 
-`coinsEarned` — фактически заработанные монеты (0–75), ровно столько же записано в реестр куратора.
+`coinsEarned` — фактически заработанные монеты (0–150), ровно столько же записано в реестр куратора.
+`maxCoins` — максимум квеста, который проходил ученик: **150** (8 загадок). У прохождений старого квеста
+из 4 загадок, завершённых до обновления, — 75; начислять нужно `coinsEarned`, а не долю от максимума.
+`rooms` — 4 записи-суммы по комнатам (как раньше, поля не менялись): `maxReward` 20 / 30 / 40 / 60 — сумма пулов
+двух загадок, `attempts` и `hintsUsed` — суммы по двум загадкам комнаты.
+`puzzles` — 8 записей по загадкам (новое поле): `maxReward` — пул загадки (10 / 15 / 20 / 30 по комнате),
+`hintsUsed` — 0, 1 или 2 (вторая подсказка обнуляет монеты за загадку). У старых прохождений (максимум 75) — пустой массив.
 `verificationCode` — формат `EZ-` + 4 символа из `23456789ABCDEFGHJKLMNPQRSTUVWXYZ`. `studentId` — `null`, если AUTH_INIT не приходил.
 
 ### `EASYLAB_GAME_FINISHED` (модуль → платформа)

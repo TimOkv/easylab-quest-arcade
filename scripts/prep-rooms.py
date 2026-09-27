@@ -8,13 +8,17 @@
   2. применяет заплатки из PATCHES — координаты в пикселях готовой сцены 1600×900:
        ('fill',  box)          — залить цветом фона исходника (кнопки на чёрном поле);
        ('clone', box, dx, dy)  — закрыть область копией соседнего участка (котик на полу);
-       ('heal',  box)          — залить гладкой смесью окружающих цветов (кнопки поверх стен/потолка).
+       ('heal',  box)          — залить гладкой смесью окружающих цветов (кнопки поверх стен/потолка);
+       ('streak', box, angle)  — протянуть внутрь цвета границы вдоль направления angle° (доски потолка:
+                                 полосы продолжаются, а не расплываются пятном, как у 'heal');
+       ('mirror', box)         — зеркальная копия симметричного угла комнаты (x → W − x).
      Края заплатки растушёваны, чтобы не было швов.
 Идемпотентен: всегда читает исходники, результат перезаписывается. Превью с разметкой
 заплаток:  python3 scripts/prep-rooms.py --preview <папка>
 """
 from __future__ import annotations
 
+import math
 import os
 import sys
 
@@ -60,10 +64,11 @@ PATCHES = {
         ('clone', (782, 452, 836, 600), 50, 0),  # правая половина (хвост)
     ],
     'attic': [
-        # доски скоса идут по диагонали к краю картинки — клон со сдвигом их не продолжает,
-        # поэтому гладкая заливка (угол потолка в тени, сверху его перекрывает HUD)
-        ('heal', (86, 4, 190, 102)),
-        ('heal', (1298, 2, 1522, 114)),
+        # меню лежит на горизонтальных досках левее стропила — тянем доски по горизонтали;
+        # QR и рюкзак — на симметричном правом скосе: зеркалим уже исправленный левый угол
+        # (стропила продолжаются). 'heal' здесь оставлял бурые размытые пятна, видные на ПК.
+        ('streak', (94, 8, 182, 94), 0),
+        ('mirror', (1300, 0, 1519, 116)),
         ('clone', (700, 378, 748, 506), 94, 0),  # котик: левая половина (хвост)
         ('clone', (744, 378, 792, 506), 52, 0),  # котик: правая половина
     ],
@@ -117,6 +122,53 @@ def heal_layer(img: Image.Image, box: tuple[int, int, int, int], iterations: int
     return layer
 
 
+def streak_layer(img: Image.Image, box: tuple[int, int, int, int], angle: float,
+                 spread: int = 2, depth: int = 3) -> Image.Image:
+    """Каждый пиксель box — смесь цветов двух точек за краем box на прямой через него под углом
+    angle (ближняя точка весит больше). Точки за краем картинки (тёмные поля contain) не берутся."""
+    x1, y1, x2, y2 = box
+    ux, uy = math.cos(math.radians(angle)), math.sin(math.radians(angle))
+    vx, vy = -uy, ux
+    src = img.load()
+    layer = img.copy()
+    dst = layer.load()
+    bw, bh = img.size
+    # границы самой картинки в сцене: слева/справа от неё — поле цвета фона
+    left = next(x for x in range(bw) if src[x, bh // 2] != src[0, bh // 2])
+    right = next(x for x in range(bw - 1, -1, -1) if src[x, bh // 2] != src[bw - 1, bh // 2]) + 1
+
+    def inside(x: int, y: int) -> bool:
+        return x1 <= x < x2 and y1 <= y < y2
+
+    def sample(x: int, y: int, sx: float, sy: float) -> tuple[tuple[float, float, float] | None, int]:
+        t = 0
+        while inside(round(x + sx * t), round(y + sy * t)):
+            t += 1
+        acc, n = [0, 0, 0], 0
+        for d in range(1, depth + 1):
+            for k in range(-spread, spread + 1):
+                qx, qy = round(x + sx * (t + d) + vx * k), round(y + sy * (t + d) + vy * k)
+                if left <= qx < right and 0 <= qy < bh and not inside(qx, qy):
+                    c = src[qx, qy]
+                    acc[0] += c[0]; acc[1] += c[1]; acc[2] += c[2]
+                    n += 1
+        return (tuple(a / n for a in acc) if n else None), t
+
+    for y in range(y1, y2):
+        for x in range(x1, x2):
+            a, ta = sample(x, y, ux, uy)
+            b, tb = sample(x, y, -ux, -uy)
+            if a is None and b is None:
+                continue
+            if a is None or b is None:
+                c = a or b
+            else:
+                w = tb / (ta + tb)
+                c = tuple(a[i] * w + b[i] * (1 - w) for i in range(3))
+            dst[x, y] = tuple(round(v) for v in c)
+    return layer
+
+
 def apply_patch(img: Image.Image, bg: tuple[int, int, int], patch: tuple) -> Image.Image:
     kind, box = patch[0], patch[1]
     if kind == 'fill':
@@ -129,6 +181,8 @@ def apply_patch(img: Image.Image, bg: tuple[int, int, int], patch: tuple) -> Ima
         layer.paste(src, (x1 - FEATHER * 2, y1 - FEATHER * 2))
     elif kind == 'heal':
         layer = heal_layer(img, box)
+    elif kind == 'streak':
+        layer = streak_layer(img, box, patch[2])
     elif kind == 'mirror':
         # Зеркальная копия симметричного угла комнаты: x → W - x (комната симметрична относительно центра сцены).
         x1, y1, x2, y2 = box

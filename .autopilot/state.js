@@ -11,7 +11,7 @@ window.STATE =
   "memoryFile": "CLAUDE.md",
   "skillDir": "/Users/timofejokunev/.claude/skills/autopilot",
   "startedAt": "2026-09-27T14:38:15+03:00",
-  "updatedAt": "2026-09-27T19:25:00+03:00",
+  "updatedAt": "2026-09-27T23:58:00+03:00",
   "finishedAt": null,
   "stages": [
     {
@@ -49,15 +49,17 @@ window.STATE =
     },
     {
       "id": "build",
-      "status": "active",
+      "status": "done",
       "startedAt": "2026-09-27T16:19:40+03:00",
-      "note": "4 из 6 тасков готовы"
+      "note": "6 из 6 тасков готовы",
+      "finishedAt": "2026-09-27T23:58:00+03:00"
     },
     {
       "id": "review",
-      "status": "active",
+      "status": "done",
       "startedAt": "2026-09-27T16:23:30+03:00",
-      "note": "проверено 4 из 6"
+      "note": "проверено 6 из 6; таск 06 — 1 ремонт (R19)",
+      "finishedAt": "2026-09-27T23:58:00+03:00"
     },
     {
       "id": "final",
@@ -66,8 +68,8 @@ window.STATE =
   ],
   "requirements": {
     "total": 31,
-    "done": 10,
-    "inTicket": 21,
+    "done": 31,
+    "inTicket": 0,
     "inSpec": 0,
     "placeholder": 0,
     "deferred": 0,
@@ -283,11 +285,27 @@ window.STATE =
       "zone": [
         "src/quest/"
       ],
-      "status": "review",
+      "status": "done",
       "retries": 0,
       "repairs": 0,
       "handoffs": 0,
-      "startedAt": "2026-09-27T19:05:00+03:00"
+      "startedAt": "2026-09-27T19:05:00+03:00",
+      "finishedAt": "2026-09-27T19:34:00+03:00",
+      "commit": "3534f97",
+      "tests": {
+        "passed": 329,
+        "failed": 0
+      },
+      "files": [
+        "src/quest/screen.ts",
+        "src/quest/scene.ts",
+        "src/quest/quest.css",
+        "src/quest/world/walk.ts",
+        "src/quest/world/rooms.ts",
+        "src/app/screens.ts",
+        "tests/world-walk.test.ts",
+        "tests/e2e/support/flow.ts"
+      ]
     },
     {
       "id": "06",
@@ -313,10 +331,28 @@ window.STATE =
         "tests/e2e/",
         "docs/"
       ],
-      "status": "pending",
+      "status": "done",
       "retries": 0,
-      "repairs": 0,
-      "handoffs": 0
+      "repairs": 1,
+      "handoffs": 0,
+      "startedAt": "2026-09-27T19:34:00+03:00",
+      "finishedAt": "2026-09-27T23:58:00+03:00",
+      "tests": {
+        "passed": 331,
+        "failed": 0
+      },
+      "files": [
+        "src/quest/screen.ts",
+        "src/quest/quest.css",
+        "src/quest/texts.ts",
+        "scripts/prep-rooms.py",
+        "src/assets/rooms/attic.webp",
+        "tests/quest-screen.test.ts",
+        "tests/e2e/acceptance.spec.ts",
+        "tests/e2e/support/flow.ts",
+        "docs/INTEGRATION.md",
+        "docs/adr/0004-coin-formula.md"
+      ]
     }
   ],
   "singlePass": null,
@@ -355,11 +391,28 @@ window.STATE =
     "T04 arcade/clock — прослойка реэкспорта при том, что game.ts уже импортирует core/clock под псевдонимом",
     "T04 brand.ts — EASYCODE_LIGHT назван брендовым цветом без источника; копия hex в палитре спрайта; sym20 назван неверно",
     "T04 tests/world-walk.test.ts:102 — проверка пути в мебель обёрнута в if(path.length), покраснеть не может; импорты посреди файла",
-    "T04 → передано в таск 05: nearestWalkable не учитывает связность; PAD_X=16 при теле Изика ±30 px"
+    "T05 src/quest/screen.ts — постер исключается по radius <= 0 (sentinel из T04); openPuzzle перекрывает имена room/def; renderAction играет звук; текст управления дважды",
+    "T05 src/quest/world/walk.ts:110,163 — правило «8 направлений без срезания углов» продублировано в BFS и A*",
+    "T05 quest.css/screen.ts:333 — зашитые цвета вместо токенов --ezq-navy-deep/--ezq-gold/--ezq-blue",
+    "T05 e2e — не покрыты стрелки/WASD, клавиша E, отмена пути, скрытие подсказки, «Решено ✓ +N», «Загадки k/2», спавн после перезагрузки",
+    "T05 → передано в таск 06: пороги триумфа по комнатным суммам; мёртвый CSS камеры/хотспотов; rAF в режимах puzzle/triumph",
+    "T06 src/quest/screen.ts:535-641 — машина состояний перехода через дверь живёт в экране (1139 строк), проверяема только e2e; расчёт фаз стоит вынести в модуль без DOM с unit-тестами",
+    "T06 src/quest/screen.ts:594,632,252 — дубли: интерполяция from→to дважды, расстояние до предмета через Math.hypot при готовом within",
+    "T06 src/quest/screen.ts:618 — шаги из проёма решаются сравнением по ссылке from === def.spawn",
+    "T06 src/quest/screen.ts:1021 — «старое прохождение» по maxPossibleCoins === 75, та же проверка в services/curator.ts:37; нет одного понятия в core",
+    "T06 src/quest/screen.ts:1086 — класс ezq-quest--rotate ставится, но в CSS не используется",
+    "T06 screen.ts:48,51 / quest.css:1306,1517 — длительности карточки (1.5 с) и оживания декора (0.4 с) заданы и в TS, и в CSS",
+    "T06 src/quest/screen.ts:938 — постер→триумф идёт по setTimeout, а переход через дверь по времени сцены: на паузе «Поверни телефон» первое идёт, второе стоит",
+    "T06 quest.css:1330–1499 — усугублён долг зашитых цветов: #fff8ea, #ffe9e0, #070a18, фирменный синий мимо токенов, 1600/900px копией STAGE_W/H",
+    "T06 tests/quest-screen.test.ts — текст триумфа для старого прохождения на 75 монет не покрыт",
+    "T06 src/quest/screen.ts:57 — звуки декора: «мурр (низкий тон)» у спящего кота звучит как click, «нота» у гитары — как jump (таблица «Декор» просит свои звуки)",
+    "T06 src/assets/rooms/kitchen.webp — светлый прямоугольник у стены так и остался (не входил в ремонт)",
+    "T06 скриншот спальни — «Решено ✓ +10» частично закрывает ✓ своего же шкафа",
+    "T06 src/quest/screen.ts:899,1056,1083 — отклик панели и шаги триумфа по-прежнему на setTimeout, на паузе поворота идут"
   ],
   "reviewers": {
-    "manifestSpec": "rev-ms (a566482ccc494e854)",
-    "craft": "rev-craft (a157b2e4b3c7b3088)"
+    "manifestSpec": "rev-ms-06 (a07a8c30f1ceb1979)",
+    "craft": "rev-craft-06 (a6a532f5158bd6a5e)"
   },
   "blind": null
 }

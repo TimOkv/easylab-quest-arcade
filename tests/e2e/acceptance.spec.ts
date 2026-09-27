@@ -19,7 +19,8 @@ const VIEWPORTS = [
   },
   {
     name: 'mobile',
-    use: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 },
+    // Телефон в горизонтали: в вертикали квест просит повернуть телефон (проверка — ниже).
+    use: { viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 },
     // 1: сразу → 10+10; 2: сразу → 15+15; 3: ошибка + обе подсказки → 0+20; 4: сразу → 30+30. Итого 130.
     plan: { room1Wrong: 0, room2Wrong: 0, room2Hint1: false, room3Wrong: 1, room3Hints: 2 } as QuestPlan,
     rooms: [20, 30, 20, 60],
@@ -38,6 +39,8 @@ function collectErrors(page: Page): string[] {
 for (const vp of VIEWPORTS) {
   test.describe(vp.name, () => {
     test.use(vp.use);
+    // Квест проходится ходьбой через 4 комнаты и 3 двери — плюс забег в аркаде.
+    test.describe.configure({ timeout: 240_000 });
 
     test('квест с ошибками → монеты по формуле, триумф с EZ-кодом, реестр куратора; перезагрузка → аркада; забег → рейтинг', async ({ page, context }) => {
       const db = await installSupabaseMock(context);
@@ -47,6 +50,7 @@ for (const vp of VIEWPORTS) {
       await playQuest(page, 'Тимофей', vp.plan, {
         onRoom: async (tag) => shot(page, `quest-${tag}-${vp.name}`),
         eachRoom: async () => { if (vp.name === 'mobile') await expectNoHorizontalScroll(page); },
+        onWalk: async (tag) => shot(page, `${tag}-${vp.name}`, 'walk', tag === 'door-wipe' ? 0 : 400),
       });
 
       // ---- триумф: фактические монеты и личный ID
@@ -75,7 +79,7 @@ for (const vp of VIEWPORTS) {
       await expect(card).toBeVisible();
       await expect(card).toContainText(code);
       await expect(card).toContainText(`Заработано ${vp.total} из 150`);
-      await expect(page.locator('.ezq-intro, .ezq-qpanel, .ezq-triumph, .ezq-hotspot')).toHaveCount(0);
+      await expect(page.locator('.ezq-intro, .ezq-qpanel, .ezq-triumph, .ezq-qobj')).toHaveCount(0);
       await shot(page, `arcade-profile-${vp.name}`);
       // даже подмена сохранения на «экран квеста» не открывает квест
       await page.evaluate(() => {
@@ -85,7 +89,7 @@ for (const vp of VIEWPORTS) {
       });
       await page.reload();
       await expect(card).toBeVisible();
-      await expect(page.locator('.ezq-intro, .ezq-qpanel, .ezq-hotspot')).toHaveCount(0);
+      await expect(page.locator('.ezq-intro, .ezq-qpanel, .ezq-qobj')).toHaveCount(0);
       save = await saveOf(page);
       expect(save.quest.totalCoinsEarned).toBe(vp.total);
       expect(save.quest.verificationCode).toBe(code);
@@ -188,8 +192,37 @@ for (const vp of VIEWPORTS) {
   });
 }
 
+const PORTRAIT = { width: 390, height: 844 };
+const LANDSCAPE = { width: 844, height: 390 };
+
 test.describe('mobile, демо-режим без Supabase', () => {
-  test.use(VIEWPORTS[1].use);
+  test.use({ ...VIEWPORTS[1].use, viewport: PORTRAIT });
+  test.describe.configure({ timeout: 240_000 });
+
+  test('телефон в вертикали: квест просит повернуть телефон и стоит на паузе; в горизонтали — играется', async ({ page }) => {
+    await page.goto(DEMO_URL);
+    const rotate = page.locator('.ezq-qrotate');
+    await expect(rotate).toBeVisible();
+    await expect(rotate).toContainText('Поверни телефон');
+    await shot(page, 'rotate-portrait', 'walk');
+    await page.setViewportSize(LANDSCAPE);
+    await expect(rotate).toBeHidden();
+    await expect(page.locator('.ezq-intro__input')).toBeVisible();
+    await page.locator('.ezq-intro__input').fill('Маша');
+    await page.locator('.ezq-intro__start').click();
+    // пауза: в вертикали Изик не идёт, после поворота — доходит
+    const room = page.locator('.ezq-qhud__room');
+    await page.setViewportSize(PORTRAIT);
+    await expect(rotate).toBeVisible();
+    await page.setViewportSize(LANDSCAPE);
+    await expect(room).toHaveText('Комната 1 из 4 · Спальня');
+    await page.locator('.ezq-qobj[data-puzzle="var_assign"]').click(); // шкаф далеко: идти ≈ 3 с
+    await page.setViewportSize(PORTRAIT);
+    await page.waitForTimeout(1500);
+    await expect(page.locator('.ezq-qact__go')).toHaveCount(0);
+    await page.setViewportSize(LANDSCAPE);
+    await expect(page.locator('.ezq-qact__go')).toBeVisible({ timeout: 10_000 });
+  });
 
   test('двойной тап и свайпы не зумят и не прокручивают; демо-рейтинг без сервера', async ({ page, context }) => {
     const errors = collectErrors(page);
@@ -238,7 +271,10 @@ test.describe('mobile, демо-режим без Supabase', () => {
     };
 
     await gestures('.ezq-stage');
+    await page.setViewportSize(LANDSCAPE); // квест — в горизонтали
     await playQuest(page, 'Маша', { room1Wrong: 0, room2Wrong: 0, room2Hint1: false, room3Wrong: 0, room3Hints: 0 });
+    await page.setViewportSize(PORTRAIT); // триумф и аркада — в вертикали, без просьбы повернуть
+    await expect(page.locator('.ezq-qrotate')).toBeHidden();
     await expect(page.locator('.ezq-triumph__lead')).toHaveText('Ты заработал 150 EasyCoins из 150 возможных!');
     await expect(page.locator('.ezq-triumph__sync--demo')).toBeVisible();
     await gestures('.ezq-triumph__card');

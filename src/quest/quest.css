@@ -10,9 +10,7 @@
 }
 
 .ezq-btn[hidden],
-.ezq-hotspot[hidden],
 .ezq-pz-card[hidden],
-.ezq-qhud__stake[hidden],
 .ezq-qpanel__confirm[hidden] {
   display: none;
 }
@@ -31,254 +29,10 @@
   overflow: hidden;
 }
 
-/* ---------------------------------------------------------------- сцена и камера */
-
-.ezq-qstage {
-  background: #0a0e22;
-}
-
-.ezq-cam {
-  position: absolute;
-  left: 0;
-  top: 0;
-  transform-origin: 0 0;
-  transition: transform 1s ease-in-out;
-  will-change: transform;
-}
-
-.ezq-cam--instant {
-  transition: none;
-}
-
-.ezq-cam__img {
-  position: absolute;
-  max-width: none;
-  image-rendering: pixelated;
-  user-select: none;
-  -webkit-user-select: none;
-  pointer-events: none;
-}
-
-.ezq-hotspot {
-  position: absolute;
-  margin: 0;
-  padding: 0;
-  border: 4px solid rgba(255, 201, 51, 0.95);
-  border-radius: 18px;
-  background: rgba(255, 201, 51, 0.08);
-  cursor: pointer;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-  animation: ezq-hotspot-pulse 1.4s ease-in-out infinite;
-}
-
-.ezq-hotspot:focus-visible {
-  outline: 6px solid var(--ezq-sky);
-  outline-offset: 4px;
-}
-
-.ezq-hotspot:hover {
-  background: rgba(255, 201, 51, 0.18);
-}
-
-.ezq-hotspot__label {
-  position: absolute;
-  left: 50%;
-  bottom: -52px;
-  transform: translateX(-50%);
-  padding: 4px 14px;
-  border: 3px solid var(--ezq-wood-dark);
-  border-radius: 10px;
-  background: var(--ezq-gold);
-  color: var(--ezq-black);
-  font: 700 24px/1.2 var(--ezq-font);
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-@keyframes ezq-hotspot-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 201, 51, 0.7), 0 0 18px 4px rgba(255, 201, 51, 0.45); }
-  50% { box-shadow: 0 0 0 14px rgba(255, 201, 51, 0), 0 0 34px 12px rgba(255, 201, 51, 0.7); }
-}
-
-/* ---- эффекты решений */
-
-.ezq-fx {
-  position: absolute;
-  pointer-events: none;
-  box-sizing: border-box;
-}
-
 .ezq-svg {
   display: block;
   width: 100%;
   height: 100%;
-}
-
-.ezq-fx--instant,
-.ezq-fx--instant .ezq-fx-shelf {
-  transition: none;
-}
-
-.ezq-fx-terminal {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 3px;
-  font: 700 17px/1 var(--ezq-font-mono);
-  color: rgba(202, 214, 255, 0.35);
-  transition: background-color 0.6s ease, color 0.6s ease, box-shadow 0.6s ease;
-}
-
-.ezq-fx-terminal__led {
-  position: absolute;
-  right: 5px;
-  bottom: 5px;
-  width: 9px;
-  height: 9px;
-  background: var(--ezq-red);
-  animation: ezq-blink 1s steps(2, start) infinite;
-}
-
-.ezq-fx-terminal.ezq-fx--on {
-  background: rgba(10, 40, 20, 0.92);
-  color: #57ff9a;
-  box-shadow: 0 0 22px 6px rgba(43, 212, 125, 0.55);
-  text-shadow: 0 0 6px #57ff9a;
-}
-
-.ezq-fx-terminal.ezq-fx--on .ezq-fx-terminal__led {
-  background: var(--ezq-success);
-  box-shadow: 0 0 10px 3px var(--ezq-success);
-  animation: none;
-}
-
-.ezq-fx-led {
-  animation: ezq-blink 1.2s steps(2, start) infinite;
-}
-
-.ezq-fx-led--b { animation-delay: 0.4s; }
-.ezq-fx-led--c { animation-delay: 0.8s; }
-
-.ezq-fx-board.ezq-fx--on .ezq-fx-led {
-  animation-duration: 0.35s;
-}
-
-.ezq-fx-board__sensor {
-  animation: ezq-blink 0.9s steps(2, start) infinite;
-}
-
-.ezq-fx-robot__eye {
-  transition: fill 0.4s ease;
-}
-
-.ezq-fx-robot.ezq-fx--on {
-  animation: ezq-robot-bob 0.9s ease-in-out infinite;
-  filter: drop-shadow(0 0 10px rgba(84, 200, 244, 0.8));
-}
-
-.ezq-fx-robot.ezq-fx--on .ezq-fx-robot__eye {
-  fill: #54c8f4;
-}
-
-.ezq-fx-robot.ezq-fx--on .ezq-fx-robot__antenna {
-  fill: #2bd47d;
-}
-
-@keyframes ezq-robot-bob {
-  0%, 100% { transform: translateY(0) rotate(-3deg); }
-  50% { transform: translateY(-8px) rotate(3deg); }
-}
-
-.ezq-fx-shelf {
-  background-repeat: no-repeat;
-  image-rendering: pixelated;
-  transition: transform 1.2s cubic-bezier(0.5, 0, 0.3, 1);
-  box-shadow: none;
-}
-
-.ezq-fx-shelf.ezq-fx--on {
-  transform: translateX(-104px);
-  box-shadow: 10px 0 16px rgba(0, 0, 0, 0.5);
-}
-
-.ezq-fx-door {
-  opacity: 0;
-  transition: opacity 0.6s ease 0.6s, filter 0.6s ease 0.6s;
-}
-
-.ezq-fx-door.ezq-fx--on {
-  opacity: 1;
-  filter: drop-shadow(0 0 14px rgba(0, 184, 255, 0.9));
-}
-
-.ezq-fx-tv {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transform: skewY(-26deg);
-  transform-origin: 0 0;
-  opacity: 0;
-  background: linear-gradient(160deg, #54c8f4, #0068ff);
-  color: var(--ezq-white);
-  font: 700 14px/1.1 var(--ezq-font-mono);
-  text-align: center;
-  white-space: pre-line;
-  transition: opacity 0.8s ease;
-}
-
-.ezq-fx-tv.ezq-fx--on {
-  opacity: 0.92;
-  box-shadow: 0 0 30px 10px rgba(84, 200, 244, 0.7);
-  animation: ezq-tv-flicker 2.4s ease-in-out infinite;
-}
-
-@keyframes ezq-tv-flicker {
-  0%, 100% { filter: brightness(1); }
-  50% { filter: brightness(1.25); }
-}
-
-.ezq-fx-speakers {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-}
-
-.ezq-fx-speaker {
-  width: 26px;
-  height: 42px;
-}
-
-.ezq-fx-speakers.ezq-fx--on .ezq-fx-speaker {
-  animation: ezq-speaker-beat 0.45s ease-in-out infinite;
-}
-
-@keyframes ezq-speaker-beat {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.12); }
-}
-
-.ezq-fx-note {
-  position: absolute;
-  left: 40%;
-  bottom: 30px;
-  opacity: 0;
-  color: var(--ezq-gold);
-  font: 700 26px/1 var(--ezq-font);
-  text-shadow: 0 2px 0 var(--ezq-wood-dark);
-}
-
-.ezq-fx-speakers.ezq-fx--on .ezq-fx-note {
-  animation: ezq-note-float 2.1s ease-out infinite;
-}
-
-.ezq-fx-note--1 { left: 5%; animation-delay: 0.7s !important; color: var(--ezq-cyan); }
-.ezq-fx-note--2 { left: 70%; animation-delay: 1.4s !important; color: var(--ezq-magenta); }
-
-@keyframes ezq-note-float {
-  0% { opacity: 0; transform: translate(0, 0) rotate(-10deg); }
-  20% { opacity: 1; }
-  100% { opacity: 0; transform: translate(14px, -70px) rotate(12deg); }
 }
 
 @keyframes ezq-blink {
@@ -311,61 +65,6 @@
 
 .ezq-qhud__group--right {
   justify-content: flex-end;
-}
-
-.ezq-qhud__progress {
-  display: flex;
-  gap: 4px;
-  margin: 0;
-  padding: 4px;
-  list-style: none;
-  border: 3px solid var(--ezq-wood);
-  border-radius: 12px;
-  background: var(--ezq-navy);
-}
-
-.ezq-qhud__step {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--ezq-panel-muted);
-  font: 700 15px/1 var(--ezq-font-mono);
-  transition: background-color 0.3s ease, transform 0.3s ease;
-}
-
-.ezq-qhud__step--current {
-  background: var(--ezq-blue);
-  color: var(--ezq-white);
-  box-shadow: inset 0 0 0 2px var(--ezq-gold);
-  transform: scale(1.08);
-}
-
-.ezq-qhud__step--done {
-  background: var(--ezq-success);
-  color: var(--ezq-navy-deep);
-}
-
-.ezq-qhud__stake {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 38px;
-  box-sizing: border-box;
-  padding: 4px 10px;
-  border: 3px solid var(--ezq-wood);
-  border-radius: 12px;
-  background: var(--ezq-navy);
-  color: #cad6ff;
-  font-size: 14px;
-}
-
-.ezq-qhud__stake-num {
-  color: var(--ezq-gold);
-  font: 700 18px/1 var(--ezq-font-mono);
 }
 
 .ezq-qhud__coins {
@@ -459,15 +158,6 @@
 
 .ezq-qpanel__footer:empty {
   display: none;
-}
-
-.ezq-patch {
-  background-repeat: no-repeat;
-  image-rendering: pixelated;
-}
-
-.ezq-patch--bg {
-  background: #050811;
 }
 
 /* альбомная ориентация: подсказка — карточка снизу, загадка/intro — модалка */
@@ -1214,11 +904,6 @@
     order: 2;
   }
 
-  .ezq-qhud__stake {
-    order: 3;
-    min-height: 32px;
-  }
-
   .ezq-quest__stagebox {
     flex: none;
     width: 100%;
@@ -1273,13 +958,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ezq-cam,
-  .ezq-fx-shelf {
-    transition-duration: 0.01s;
-  }
-
-  .ezq-hotspot,
-  .ezq-fx-robot,
   .ezq-pulse,
   .ezq-btn--arcade {
     animation: none;
@@ -1383,7 +1061,12 @@
 .ezq-qpanel[hidden],
 .ezq-qhud[hidden],
 .ezq-qtip[hidden],
-.ezq-qact[hidden] {
+.ezq-qact[hidden],
+.ezq-qbanner[hidden],
+.ezq-qsay[hidden],
+.ezq-qwipe[hidden],
+.ezq-qcard[hidden],
+.ezq-qrotate[hidden] {
   display: none;
 }
 
@@ -1474,6 +1157,7 @@
 
 .ezq-qact {
   position: absolute;
+  z-index: 2;
   transform: translate(-50%, -100%);
   pointer-events: auto;
   animation: ezq-qact-in 0.2s ease-out;
@@ -1541,15 +1225,6 @@
   text-align: center;
   pointer-events: none;
   animation: ezq-rise 0.35s ease;
-}
-
-.ezq-qnext {
-  position: absolute;
-  left: 50%;
-  bottom: 14px;
-  z-index: 8;
-  transform: translateX(-50%);
-  animation: ezq-btn-pulse 1.4s ease-in-out infinite;
 }
 
 .ezq-qhud__room,
@@ -1625,9 +1300,286 @@
   }
 }
 
+/* ---------------------------------------------------------------- декор, бренд, дверь, переход */
+
+.ezq-qobj--alive {
+  animation: ezq-qobj-alive var(--ezq-alive-s, 0.4s) ease-out;
+}
+
+@keyframes ezq-qobj-alive {
+  0% { transform: rotate(0deg) scale(1); box-shadow: 0 0 0 0 rgba(255, 223, 128, 0); }
+  30% { transform: rotate(-2.5deg) scale(1.03); box-shadow: 0 0 0 4px rgba(255, 223, 128, 0.8), 0 0 40px 14px rgba(255, 201, 51, 0.55); }
+  65% { transform: rotate(2deg) scale(1.02); }
+  100% { transform: rotate(0deg) scale(1); box-shadow: 0 0 0 0 rgba(255, 223, 128, 0); }
+}
+
+.ezq-qbrand {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ezq-qbrand--screen {
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.ezq-qbrand--screen.ezq-qbrand--on {
+  opacity: 1;
+  box-shadow: 0 0 18px 4px rgba(0, 104, 255, 0.55);
+  animation: ezq-screen-on 0.45s steps(4, end);
+}
+
+@keyframes ezq-screen-on {
+  0% { opacity: 0.2; filter: brightness(2.2); }
+  50% { opacity: 0.6; }
+  100% { opacity: 1; filter: none; }
+}
+
+.ezq-qbrand--magnet {
+  border-radius: 50%;
+  box-shadow: 1px 2px 0 rgba(0, 0, 0, 0.35);
+}
+
+.ezq-qbrand--poster {
+  border-radius: 3px;
+  filter: brightness(0.62) saturate(0.75);
+  transition: filter 0.6s ease;
+}
+
+.ezq-qbrand--poster.ezq-qbrand--on {
+  overflow: visible;
+  filter: none;
+  animation: ezq-poster-glow 1.4s ease-in-out infinite alternate;
+}
+
+@keyframes ezq-poster-glow {
+  from { box-shadow: 0 0 10px 3px rgba(155, 196, 255, 0.55); }
+  to { box-shadow: 0 0 34px 12px rgba(0, 104, 255, 0.75); }
+}
+
+.ezq-qdoor {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ezq-qdoor:focus-visible {
+  outline: 4px solid var(--ezq-sky);
+  outline-offset: 4px;
+}
+
+.ezq-qdoor--open {
+  background: radial-gradient(ellipse at 50% 60%, rgba(255, 236, 170, 0.55), rgba(255, 201, 51, 0.12) 70%, transparent 100%);
+  animation: ezq-door-glow 1.3s ease-in-out infinite;
+}
+
+@keyframes ezq-door-glow {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(120, 230, 140, 0.7), 0 0 26px 8px rgba(255, 201, 51, 0.45); }
+  50% { box-shadow: 0 0 0 6px rgba(120, 230, 140, 1), 0 0 56px 20px rgba(255, 201, 51, 0.7); }
+}
+
+.ezq-qdoor__arrow {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 18px);
+  display: none;
+  width: 0;
+  height: 0;
+  border-left: 34px solid transparent;
+  border-right: 34px solid transparent;
+  border-top: 40px solid var(--ezq-gold);
+  filter: drop-shadow(0 4px 0 var(--ezq-wood-dark)) drop-shadow(0 0 12px rgba(255, 201, 51, 0.8));
+  transform: translateX(-50%);
+  animation: ezq-door-arrow 0.9s ease-in-out infinite;
+}
+
+.ezq-qdoor__arrow::before {
+  content: "";
+  position: absolute;
+  left: -14px;
+  bottom: 38px;
+  width: 28px;
+  height: 34px;
+  border-radius: 4px 4px 0 0;
+  background: var(--ezq-gold);
+}
+
+.ezq-qdoor--open .ezq-qdoor__arrow {
+  display: block;
+}
+
+@keyframes ezq-door-arrow {
+  0%, 100% { transform: translate(-50%, -12px); }
+  50% { transform: translate(-50%, 6px); }
+}
+
+/* Плашка «Быстрее пройди в дверь…» — внизу сцены, в полосе под полом и сбоку от двери: сверху её
+   закрывает HUD телефона, а над предметами стоят ✓ и «Решено ✓ +N» (координаты сцены 1600×900). */
+.ezq-qbanner {
+  position: absolute;
+  left: 872px;
+  bottom: 10px;
+  z-index: 1;
+  box-sizing: border-box;
+  width: 640px;
+  padding: 12px 26px;
+  border: 5px solid var(--ezq-wood-dark);
+  border-radius: 22px;
+  background: var(--ezq-success);
+  box-shadow: 0 8px 0 var(--ezq-wood-dark), 0 0 40px rgba(120, 230, 140, 0.55);
+  color: var(--ezq-navy-deep);
+  font: 800 30px/1.15 var(--ezq-font);
+  text-align: center;
+  animation: ezq-banner-in 0.45s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+/* Библиотека: дверь слева вверху, внизу справа — лежанка котика; снизу по центру — свободный пол. */
+.ezq-qstage[data-room="library"] .ezq-qbanner {
+  left: 600px;
+}
+
+@keyframes ezq-banner-in {
+  from { opacity: 0; transform: translateY(30px) scale(0.9); }
+  to { opacity: 1; transform: none; }
+}
+
+.ezq-qsay {
+  position: absolute;
+  z-index: 3;
+  max-width: 440px;
+  box-sizing: border-box;
+  transform: translate(-50%, -100%);
+  padding: 14px 22px;
+  border: 5px solid var(--ezq-wood-dark);
+  border-radius: 24px;
+  background: #fff8ea;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.3);
+  color: var(--ezq-navy-deep);
+  font: 700 30px/1.2 var(--ezq-font);
+  text-align: center;
+  animation: ezq-say-in 0.25s ease-out;
+}
+
+.ezq-qsay::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 0;
+  height: 0;
+  border-left: 16px solid transparent;
+  border-right: 16px solid transparent;
+  border-top: 20px solid var(--ezq-wood-dark);
+  transform: translateX(-50%);
+}
+
+.ezq-qsay--door {
+  background: #ffe9e0;
+}
+
+@keyframes ezq-say-in {
+  from { opacity: 0; transform: translate(-50%, calc(-100% + 14px)) scale(0.9); }
+  to { opacity: 1; transform: translate(-50%, -100%); }
+}
+
+.ezq-qwipe {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  width: 1600px;
+  height: 900px;
+  background: radial-gradient(circle at var(--ezq-wx, 800px) var(--ezq-wy, 450px), transparent calc(var(--ezq-wr, 2000px) - 2px), #070a18 var(--ezq-wr, 2000px));
+  pointer-events: auto;
+}
+
+.ezq-qwipe--fade {
+  background: #070a18;
+}
+
+.ezq-qcard {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  z-index: 6;
+  transform: translate(-50%, -50%);
+  padding: 22px 44px;
+  border: 6px solid var(--ezq-wood-dark);
+  border-radius: 26px;
+  background: var(--ezq-navy);
+  box-shadow: 0 10px 0 var(--ezq-wood-dark), 0 0 60px rgba(0, 104, 255, 0.5);
+  color: var(--ezq-white);
+  font: 800 52px/1.1 var(--ezq-font);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: ezq-card-in 1.5s ease both;
+}
+
+@keyframes ezq-card-in {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+  15%, 80% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+}
+
+.ezq-qrotate {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  background: var(--ezq-navy-deep);
+  color: var(--ezq-white);
+  text-align: center;
+  touch-action: none;
+}
+
+.ezq-quest[data-mode="triumph"] .ezq-qrotate {
+  display: none;
+}
+
+.ezq-qrotate__icon {
+  font-size: 72px;
+  line-height: 1;
+  animation: ezq-rotate-hint 1.8s ease-in-out infinite;
+}
+
+@keyframes ezq-rotate-hint {
+  0%, 30% { transform: rotate(0deg); }
+  60%, 100% { transform: rotate(90deg); }
+}
+
+.ezq-qrotate__title {
+  margin: 0;
+  font: 800 28px/1.2 var(--ezq-font);
+}
+
+.ezq-qrotate__text {
+  max-width: 300px;
+  margin: 0;
+  color: var(--ezq-sky);
+  font-size: 16px;
+  line-height: 1.35;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .ezq-qobj--puzzle,
-  .ezq-qnext {
+  .ezq-qobj--alive,
+  .ezq-qdoor--open,
+  .ezq-qdoor__arrow,
+  .ezq-qbrand--on,
+  .ezq-qrotate__icon,
+  .ezq-qobj--puzzle {
     animation: none;
   }
 }

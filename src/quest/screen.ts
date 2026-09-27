@@ -5,7 +5,7 @@ import './quest.css';
 import type { Store } from '../core/state';
 import { PUZZLES_BY_ROOM, roomOfPuzzle, type EasyQuestGameState, type PuzzleId, type RoomIndex } from '../core/types';
 import { PLAYER_NAME_MAX } from '../core/rules';
-import type { Sfx } from '../services/sfx';
+import type { Sfx, SfxName } from '../services/sfx';
 import type { Music } from '../services/music';
 import { copyText, createMuteButton, createMusicButton, fitStage, showToast } from '../app/shell';
 import type { QuestController } from './controller';
@@ -13,10 +13,14 @@ import { PUZZLES, type PuzzleView } from './puzzles';
 import { button, el } from '../core/dom';
 import { createRoomStage, STAGE_H, STAGE_W } from './scene';
 import { coinIcon, confetti, countUp, flyCoins } from './effects';
-import { ROOMS_DEF, type Pt, type RoomDef, type RoomObject } from './world/rooms';
+import { ROOMS_DEF, type DecorSfx, type Dir, type Pt, type RoomDef, type RoomObject } from './world/rooms';
 import { buildGrid, createWalker, findPath, type Grid, type Walker } from './world/walk';
-import { createCatSprite } from './world/cat-sprite';
+import { CAT_H, createCatSprite } from './world/cat-sprite';
+import { easycodeLogoSvg } from './world/brand';
 import { advanceClock, createFixedClock, STEP_MS } from '../core/clock';
+import { DOOR_OPEN_TEXT } from './texts';
+
+export { DOOR_OPEN_TEXT };
 
 export interface QuestScreenDeps {
   store: Store;
@@ -40,6 +44,21 @@ const KEY_VEC: Record<string, Pt> = {
   ArrowRight: { x: 1, y: 0 }, KeyD: { x: 1, y: 0 },
 };
 const ACT_KEYS = new Set(['KeyE', 'Enter', 'NumpadEnter', 'Space']);
+
+// Дверь и переход (История 26), с — время сцены (фиксированный шаг, на паузе стоит).
+const WIPE_S = 0.6;
+const FADE_S = 0.3;
+const CARD_S = 1.5;
+const DOOR_WALK_SPEED = 170;
+// Декор (таблица «Декор»): оживание, облачко, не чаще раза в 4 с на предмет.
+const DECOR_ALIVE_S = 0.4;
+const SAY_S = 2.5;
+const DECOR_COOLDOWN_S = 4;
+/** Экран компьютера включается, когда Изик ближе этого к точке подхода. */
+const SCREEN_ON_EXTRA = 20;
+/** Звуки декора — на существующих патчах sfx. */
+const DECOR_SOUND: Record<DecorSfx, SfxName> = { note: 'jump', click: 'click', ding: 'coin', noteUp: 'spring', purr: 'click' };
+const ROTATE_QUERY = '(orientation: portrait) and (pointer: coarse)';
 
 const isCoarse = (): boolean => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
@@ -104,7 +123,7 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
   coinsNum.textContent = String(shownCoins);
 
   function renderHud(s: EasyQuestGameState = store.get()): void {
-    const n = s.navigation.currentRoomIndex;
+    const n = room; // во время перехода HUD меняется вместе с комнатой, а не в момент advance()
     roomLabel.textContent = `Комната ${n} из 4 · ${ROOMS_DEF[n].title}`;
     const solved = PUZZLES_BY_ROOM[n].filter((pid) => s.quest.puzzles[pid].isSolved).length;
     tasks.textContent = `Загадки ${solved}/2`;
@@ -122,9 +141,16 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
   const tip = el('div', 'ezq-qtip');
   tip.setAttribute('role', 'status');
   tip.hidden = true;
-  const nextBtn = button('ezq-btn ezq-btn--big ezq-qnext', 'В следующую комнату →');
-  nextBtn.hidden = true;
-  nextBtn.addEventListener('click', goNext);
+  const banner = el('div', 'ezq-qbanner', DOOR_OPEN_TEXT);
+  banner.setAttribute('role', 'status');
+  banner.hidden = true;
+  const say = el('div', 'ezq-qsay');
+  say.hidden = true;
+  const wipe = el('div', 'ezq-qwipe');
+  wipe.hidden = true;
+  const roomCard = el('div', 'ezq-qcard');
+  roomCard.hidden = true;
+  scene.stage.append(wipe, roomCard);
 
   let room: RoomIndex = store.get().navigation.currentRoomIndex;
   let def: RoomDef = ROOMS_DEF[room];
@@ -136,6 +162,15 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
   const act = el('div', 'ezq-qact');
   act.hidden = true;
 
+  let doorEl: HTMLButtonElement | null = null;
+  const brandEls = new Map<string, HTMLElement>();
+  /** Предметы/дверь, в зоне которых Изик стоит сейчас (срабатывание — на входе в зону). */
+  const inZone = new Set<string>();
+  const decorAt = new Map<string, number>();
+  let sayUntil = 0;
+  let cardUntil = 0;
+  let posterLit = false;
+
   function enterRoom(n: RoomIndex): void {
     room = n;
     def = ROOMS_DEF[n];
@@ -144,25 +179,84 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     marker = null;
     near = null;
     held.clear();
+    inZone.clear();
+    decorAt.clear();
+    hideSay();
     scene.bg.src = def.image;
     scene.bg.dataset.room = def.key;
     scene.stage.dataset.room = def.key;
     objEls.clear();
+    brandEls.clear();
     scene.objects.replaceChildren();
+    for (const o of def.objects) {
+      if (!o.brand || !o.brandRect) continue;
+      const b = el('div', `ezq-qbrand ezq-qbrand--${o.brand}`);
+      b.innerHTML = easycodeLogoSvg(o.brand); // статичная SVG-константа
+      b.dataset.obj = o.id;
+      b.setAttribute('aria-hidden', 'true');
+      placeRect(b, o.brandRect);
+      brandEls.set(o.id, b);
+      scene.objects.appendChild(b);
+    }
+    doorEl = null;
+    const exit = def.door.exit;
+    if (exit) {
+      const d = button('ezq-qdoor', '');
+      placeRect(d, exit.rect);
+      const arrow = el('span', 'ezq-qdoor__arrow');
+      arrow.setAttribute('aria-hidden', 'true');
+      d.appendChild(arrow);
+      d.addEventListener('click', () => {
+        if (!canWalk()) return;
+        if (inZone.has('door')) onDoorZone();
+        else goTo(exit.approach);
+      });
+      doorEl = d;
+      scene.objects.appendChild(d);
+    }
     for (const o of def.objects) {
       if (o.radius <= 0) continue;
       const b = button(`ezq-qobj${o.puzzleId ? ' ezq-qobj--puzzle' : ' ezq-qobj--decor'}`, '');
       placeRect(b, o.rect);
       b.dataset.obj = o.id;
       if (o.puzzleId) b.dataset.puzzle = o.puzzleId;
-      b.addEventListener('click', () => goTo(o.approach));
+      b.addEventListener('click', () => {
+        if (o.decor && canWalk() && inZone.has(o.id)) poke(o);
+        else goTo(o.approach);
+      });
       objEls.set(o.id, b);
       scene.objects.appendChild(b);
     }
-    scene.ui.replaceChildren(act);
+    scene.ui.replaceChildren(act, banner, say);
     renderObjects();
     renderAction();
     renderHud();
+  }
+
+  /** Дверь: закрыта / открыта (свечение, стрелка, плашка до входа). */
+  function renderDoor(s: EasyQuestGameState = store.get()): void {
+    const open = !!def.door.exit && controller.isRoomCleared(room) && !s.quest.isCompleted;
+    if (doorEl) {
+      doorEl.classList.toggle('ezq-qdoor--open', open);
+      doorEl.dataset.state = open ? 'open' : 'closed';
+      doorEl.setAttribute('aria-label', open ? 'Дверь в следующую комнату — открыта' : 'Дверь — закрыта');
+    }
+    banner.hidden = !(open && (mode === 'walk' || mode === 'puzzle'));
+  }
+
+  /** Бренд: экраны компьютеров включаются при подходе и после решения; постер — в финале. */
+  function renderBrand(s: EasyQuestGameState = store.get()): void {
+    for (const o of def.objects) {
+      const b = brandEls.get(o.id);
+      if (!b) continue;
+      if (o.brand === 'screen') {
+        const solved = !!o.puzzleId && s.quest.puzzles[o.puzzleId].isSolved;
+        const close = Math.hypot(walker.pos.x - o.approach.x, walker.pos.y - o.approach.y) <= o.radius + SCREEN_ON_EXTRA;
+        b.classList.toggle('ezq-qbrand--on', solved || (close && mode !== 'intro'));
+      } else if (o.brand === 'poster') {
+        b.classList.toggle('ezq-qbrand--on', posterLit);
+      }
+    }
   }
 
   function renderObjects(s: EasyQuestGameState = store.get()): void {
@@ -178,8 +272,8 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
         b.appendChild(check);
       }
     }
-    const cleared = controller.isRoomCleared(room);
-    nextBtn.hidden = !(cleared && room < 4 && mode === 'walk' && !s.quest.isCompleted);
+    renderDoor(s);
+    renderBrand(s);
   }
 
   /** Кнопка «Пройти задачу» / «Решено ✓ +N» над предметом, у которого стоит Изик. */
@@ -229,6 +323,76 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
       near = best;
       renderAction();
     }
+  }
+
+  const within = (o: { approach: Pt; radius: number }): boolean =>
+    Math.hypot(walker.pos.x - o.approach.x, walker.pos.y - o.approach.y) <= o.radius;
+
+  /** Вход в зону декора и двери — срабатывание на входе, не каждый кадр. */
+  function updateZones(): void {
+    for (const o of def.objects) {
+      if (!o.decor || o.radius <= 0) continue;
+      if (within(o)) {
+        if (!inZone.has(o.id)) {
+          inZone.add(o.id);
+          poke(o);
+        }
+      } else inZone.delete(o.id);
+    }
+    const exit = def.door.exit;
+    if (exit) {
+      if (within(exit)) {
+        if (!inZone.has('door')) {
+          inZone.add('door');
+          onDoorZone();
+        }
+      } else inZone.delete('door');
+    }
+    renderBrand();
+  }
+
+  /** Декор оживает (0,4 с), Изик говорит реплику (2,5 с), звучит звук; не чаще раза в 4 с. */
+  function poke(o: RoomObject): void {
+    if (!o.decor) return;
+    const last = decorAt.get(o.id);
+    if (last !== undefined && simT - last < DECOR_COOLDOWN_S) return;
+    decorAt.set(o.id, simT);
+    const b = objEls.get(o.id);
+    if (b) {
+      b.classList.remove('ezq-qobj--alive');
+      void b.offsetWidth;
+      b.classList.add('ezq-qobj--alive');
+      b.style.setProperty('--ezq-alive-s', `${DECOR_ALIVE_S}s`);
+    }
+    showSay(o.decor.line, 'decor');
+    sfx.play(DECOR_SOUND[o.decor.sfx]);
+  }
+
+  function onDoorZone(): void {
+    if (!def.door.exit || mode !== 'walk') return;
+    if (controller.isRoomCleared(room)) {
+      startDoor();
+      return;
+    }
+    const k = PUZZLES_BY_ROOM[room].filter((pid) => store.get().quest.puzzles[pid].isSolved).length;
+    showSay(`Дверь закрыта — реши обе загадки (${k}/2)`, 'door');
+    sfx.play('wrong');
+  }
+
+  function showSay(text: string, kind: 'decor' | 'door'): void {
+    say.textContent = text;
+    say.className = `ezq-qsay ezq-qsay--${kind}`;
+    say.hidden = false;
+    sayUntil = simT + SAY_S;
+    placeSay();
+  }
+  function hideSay(): void {
+    say.hidden = true;
+    sayUntil = 0;
+  }
+  function placeSay(): void {
+    say.style.left = `${Math.min(STAGE_W - 230, Math.max(230, walker.pos.x))}px`;
+    say.style.top = `${Math.max(150, walker.pos.y - CAT_H - 8)}px`;
   }
 
   // ------------------------------------------------------------ ввод
@@ -304,19 +468,45 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
   const clock = createFixedClock();
   const t0 = performance.now();
   const now = (): number => (performance.now() - t0) / 1000;
+  /** Время сцены, с: идёт только шагами цикла (на паузе «Поверни телефон» стоит). */
+  let simT = 0;
+  /** Хореография по времени сцены (панель → постер → триумф): на паузе «Поверни телефон» стоит вместе с ходьбой. */
+  const cues: { at: number; fn: () => void }[] = [];
+  const cue = (fn: () => void, seconds: number): void => {
+    cues.push({ at: simT + seconds, fn });
+    cues.sort((a, b) => a.at - b.at);
+  };
   let raf = 0;
   let lastTs = 0;
   let tipArmed = false;
+  let paused = false;
 
   function frame(ts: number): void {
     raf = requestAnimationFrame(frame);
+    if (paused) {
+      lastTs = 0;
+      return;
+    }
     const dt = lastTs ? Math.min(250, ts - lastTs) : STEP_MS;
     lastTs = ts;
     const steps = advanceClock(clock, dt);
-    for (let i = 0; i < steps; i++) walker.step(STEP_MS / 1000);
-    if (tipArmed && walker.moving) hideTip();
-    updateNear();
-    draw();
+    for (let i = 0; i < steps; i++) {
+      simT += STEP_MS / 1000;
+      if (mode === 'walk') walker.step(STEP_MS / 1000);
+      else if (mode === 'door') stepDoor();
+    }
+    while (cues.length && cues[0].at <= simT) cues.shift()!.fn();
+    if (mode === 'walk') {
+      if (tipArmed && walker.moving) hideTip();
+      updateNear();
+      updateZones();
+    }
+    if (!say.hidden) {
+      if (simT >= sayUntil) hideSay();
+      else placeSay();
+    }
+    if (!roomCard.hidden && simT >= cardUntil) roomCard.hidden = true;
+    if (mode !== 'triumph') draw();
   }
 
   function draw(): void {
@@ -338,7 +528,125 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
         ctx.restore();
       }
     }
-    sprite?.draw(ctx, walker.pos.x, walker.pos.y, walker.dir, walker.moving ? 'walk' : 'idle', t);
+    if (!sprite) return;
+    if (door) {
+      if (door.alpha <= 0) return;
+      ctx.save();
+      ctx.globalAlpha = door.alpha;
+      sprite.draw(ctx, door.pos.x, door.pos.y, door.dir, door.walking ? 'walk' : 'idle', t);
+      ctx.restore();
+      return;
+    }
+    sprite.draw(ctx, walker.pos.x, walker.pos.y, walker.dir, walker.moving ? 'walk' : 'idle', t);
+  }
+
+  // ------------------------------------------------------------ дверь и переход (История 26)
+  const reducedMotion = (): boolean => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  type DoorPhase = 'out' | 'close' | 'open';
+  let door: {
+    phase: DoorPhase;
+    t: number; // начало фазы, время сцены
+    from: Pt;
+    to: Pt;
+    walkS: number;
+    pos: Pt;
+    dir: Dir;
+    walking: boolean;
+    alpha: number;
+    reduced: boolean;
+  } | null = null;
+
+  const smooth = (k: number): number => k * k * (3 - 2 * k);
+  const walkTime = (a: Pt, b: Pt): number => Math.min(1, Math.max(0.4, Math.hypot(b.x - a.x, b.y - a.y) / DOOR_WALK_SPEED));
+
+  /** Изик в зоне открытой двери: номер комнаты сохраняется сразу, дальше — только анимация. */
+  function startDoor(): void {
+    const exit = def.door.exit;
+    if (!exit || mode !== 'walk' || !controller.advance()) return;
+    const from = { x: walker.pos.x, y: walker.pos.y };
+    const reduced = reducedMotion();
+    setMode('door');
+    hideSay();
+    hideTip();
+    door = { phase: 'out', t: simT, from, to: exit.walkTo, walkS: reduced ? 0 : walkTime(from, exit.walkTo), pos: { ...from }, dir: exit.dir, walking: !reduced, alpha: 1, reduced };
+    if (reduced) setDoorPhase('close');
+  }
+
+  function setDoorPhase(phase: DoorPhase): void {
+    if (!door) return;
+    door.phase = phase;
+    door.t = simT;
+    wipe.hidden = false;
+    wipe.classList.toggle('ezq-qwipe--fade', door.reduced);
+  }
+
+  function setWipe(k: number, c: Pt): void {
+    // k — доля затемнения: 0 — сцена видна, 1 — всё закрыто.
+    if (door?.reduced) {
+      wipe.style.opacity = String(k);
+      return;
+    }
+    const cy = c.y - CAT_H * 0.45;
+    const far = Math.max(Math.hypot(c.x, cy), Math.hypot(STAGE_W - c.x, cy), Math.hypot(c.x, STAGE_H - cy), Math.hypot(STAGE_W - c.x, STAGE_H - cy));
+    wipe.style.opacity = '1';
+    wipe.style.setProperty('--ezq-wx', `${c.x.toFixed(1)}px`);
+    wipe.style.setProperty('--ezq-wy', `${cy.toFixed(1)}px`);
+    wipe.style.setProperty('--ezq-wr', `${((1 - k) * (far + 20)).toFixed(1)}px`);
+  }
+
+  function stepDoor(): void {
+    const d = door;
+    if (!d) return;
+    const age = simT - d.t;
+    if (d.phase === 'out') {
+      const k = Math.min(1, age / d.walkS);
+      d.pos = { x: d.from.x + (d.to.x - d.from.x) * k, y: d.from.y + (d.to.y - d.from.y) * k };
+      d.alpha = 1 - 0.5 * Math.max(0, (k - 0.5) / 0.5); // тает в проёме
+      if (k >= 1) {
+        d.walking = false;
+        setDoorPhase('close');
+      }
+      return;
+    }
+    if (d.phase === 'close') {
+      const dur = d.reduced ? FADE_S : WIPE_S;
+      const k = Math.min(1, age / dur);
+      d.alpha = 0.5 * (1 - k);
+      setWipe(smooth(k), d.pos);
+      if (k < 1) return;
+      // Новая комната: Изик в проёме входа, круг раскрывается на нём.
+      const next = store.get().navigation.currentRoomIndex;
+      enterRoom(next);
+      sfx.play('door');
+      const entry = def.door.entry;
+      const from = entry && !d.reduced ? entry.from : def.spawn;
+      d.from = from;
+      d.to = def.spawn;
+      d.pos = { ...from };
+      d.dir = entry?.dir ?? 'down';
+      d.walkS = from === def.spawn ? 0 : walkTime(from, def.spawn);
+      d.walking = d.walkS > 0;
+      d.alpha = 1;
+      roomCard.textContent = `Комната ${next} из 4 · ${def.title}`;
+      roomCard.hidden = false;
+      cardUntil = simT + CARD_S;
+      setDoorPhase('open');
+      setWipe(1, d.pos);
+      return;
+    }
+    const dur = d.reduced ? FADE_S : WIPE_S;
+    setWipe(1 - smooth(Math.min(1, age / dur)), d.pos);
+    if (d.walkS > 0) {
+      const k = Math.min(1, age / d.walkS);
+      d.pos = { x: d.from.x + (d.to.x - d.from.x) * k, y: d.from.y + (d.to.y - d.from.y) * k };
+      d.walking = k < 1;
+    }
+    if (age >= dur && !d.walking) {
+      wipe.hidden = true;
+      walker.place(def.spawn, d.dir);
+      door = null;
+      setMode('walk');
+    }
   }
 
   function showTip(): void {
@@ -365,7 +673,7 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     panelInner.scrollTop = 0;
   };
 
-  type Mode = 'intro' | 'walk' | 'puzzle' | 'triumph';
+  type Mode = 'intro' | 'walk' | 'puzzle' | 'door' | 'triumph';
   let mode: Mode = 'walk';
   let view: PuzzleView | null = null;
   let viewPid: PuzzleId | null = null;
@@ -375,7 +683,7 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     mode = m;
     panel.dataset.mode = m;
     root.dataset.mode = m;
-    panel.hidden = m === 'walk' || m === 'triumph';
+    panel.hidden = m === 'walk' || m === 'door' || m === 'triumph';
     music?.duck(m === 'puzzle');
     if (m !== 'walk') stopWalking();
     renderAction();
@@ -438,13 +746,6 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     refs = null;
     setPanel([]);
     setMode('walk');
-  }
-
-  function goNext(): void {
-    if (mode !== 'walk' || !controller.advance()) return;
-    sfx.play('door');
-    enterRoom(store.get().navigation.currentRoomIndex);
-    renderObjects();
   }
 
   function destroyView(): void {
@@ -637,12 +938,16 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     syncButtons();
     awardCoins(refs.feedback, reward);
     renderHud();
-    // Панель сворачивается, и Изик снова ходит по комнате.
-    later(() => {
+    // Панель сворачивается, и Изик снова ходит по комнате. В финале — загорается постер Easycode, затем триумф.
+    cue(() => {
+      if (done) lightPoster();
       if (triumph || mode !== 'puzzle' || refs?.pid !== pid) return;
       closePanel();
-    }, 1400);
-    if (done) later(showTriumph, 2600);
+    }, 1.4);
+    if (done) {
+      finaleCued = true;
+      cue(showTriumph, 3);
+    }
   }
 
   function awardCoins(from: HTMLElement, reward: number): void {
@@ -662,8 +967,16 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     });
   }
 
+  function lightPoster(): void {
+    if (posterLit) return;
+    posterLit = true;
+    renderBrand();
+  }
+
   // ------------------------------------------------------------ триумф
   let triumph: HTMLElement | null = null;
+  /** Финал уже идёт по часам сцены (постер → триумф) — подписка на store его не обгоняет. */
+  let finaleCued = false;
   let syncLine: HTMLElement | null = null;
 
   function renderSync(s: EasyQuestGameState = store.get()): void {
@@ -688,6 +1001,7 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     if (triumph) return;
     const s = store.get();
     if (!s.quest.isCompleted) return;
+    posterLit = true;
     setMode('triumph');
     destroyView();
     refs = null;
@@ -714,10 +1028,16 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     for (const n of ROOMS) {
       const r = s.quest.rooms[n];
       const li = el('li', 'ezq-triumph__room');
-      const tries = r.attempts <= 1 ? 'с первой попытки' : `попыток: ${r.attempts}`;
+      // Суммы комнаты: «с первой попытки» — каждая загадка решена с первого раза; «с подсказкой» —
+      // у какой-то загадки открыта вторая (большая) подсказка.
+      // Старое завершённое прохождение (максимум 75): одна загадка на комнату, по загадкам данных нет.
+      const legacy = s.quest.maxPossibleCoins === 75;
+      const pids = PUZZLES_BY_ROOM[n];
+      const tries = r.attempts <= (legacy ? 1 : pids.length) ? 'с первой попытки' : `попыток: ${r.attempts}`;
+      const bigHint = legacy ? r.hintsUsed >= 2 : pids.some((pid) => s.quest.puzzles[pid].hintsUsed >= 2);
       li.append(
         el('span', 'ezq-triumph__room-name', `${n}. ${ROOMS_DEF[n].title}`),
-        el('span', 'ezq-triumph__room-tries', r.hintsUsed >= 2 ? `${tries}, с подсказкой` : tries),
+        el('span', 'ezq-triumph__room-tries', bigHint ? `${tries}, с подсказкой` : tries),
         el('b', 'ezq-triumph__room-coins', `${r.earnedCoins} / ${r.maxReward}`),
       );
       table.appendChild(li);
@@ -766,8 +1086,28 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     arcadeBtn.focus({ preventScroll: true });
   }
 
+  // ------------------------------------------------------------ «Поверни телефон» (G01)
+  const rotate = el('div', 'ezq-qrotate');
+  rotate.setAttribute('role', 'alert');
+  const rotateIcon = el('div', 'ezq-qrotate__icon', '🔄');
+  rotateIcon.setAttribute('aria-hidden', 'true');
+  rotate.append(rotateIcon, el('p', 'ezq-qrotate__title', 'Поверни телефон'), el('p', 'ezq-qrotate__text', 'Комнаты Изика помещаются только в горизонтальном положении.'));
+  const rotateMql = typeof matchMedia === 'function' ? matchMedia(ROTATE_QUERY) : null;
+  const syncRotate = (): void => {
+    const on = !!rotateMql?.matches;
+    rotate.hidden = !on;
+    root.classList.toggle('ezq-quest--rotate', on);
+    if (on && !paused) {
+      held.clear();
+      walker.setInput({ x: 0, y: 0 });
+    }
+    paused = on;
+  };
+  syncRotate();
+  rotateMql?.addEventListener?.('change', syncRotate);
+
   // ------------------------------------------------------------ сборка
-  root.append(hud, stageBox, nextBtn, panel, fxLayer);
+  root.append(hud, stageBox, panel, rotate, fxLayer);
   stageBox.appendChild(tip);
   host.appendChild(root);
   const fit = fitStage(scene.stage, STAGE_W, STAGE_H);
@@ -789,13 +1129,15 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     renderHud(s);
     renderObjects(s);
     if (s.quest.isSyncedWithCurator !== prev.quest.isSyncedWithCurator || s.quest.lastSyncError !== prev.quest.lastSyncError) renderSync(s);
-    if (s.quest.isCompleted && !triumph && mode !== 'puzzle') showTriumph();
+    if (s.quest.isCompleted && !triumph && mode !== 'puzzle' && !finaleCued) showTriumph();
   });
 
   return {
     destroy() {
       off();
       cancelAnimationFrame(raf);
+      cues.length = 0;
+      rotateMql?.removeEventListener?.('change', syncRotate);
       scene.stage.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);

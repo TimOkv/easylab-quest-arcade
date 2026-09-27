@@ -1,5 +1,7 @@
 // Прохождение квеста и забега через настоящий UI (страница или iframe стенда).
 import { expect, type FrameLocator, type Locator, type Page } from 'playwright/test';
+// Текст плашки — из модуля без CSS: сам screen.ts тянет quest.css и картинки, Node их не загрузит.
+import { DOOR_OPEN_TEXT } from '../../../src/quest/texts';
 
 export type Scope = Page | FrameLocator;
 
@@ -7,10 +9,10 @@ export type Scope = Page | FrameLocator;
 export const SHOTS_DIR = 'tests/e2e/__screenshots__';
 
 /** Финальные скриншоты — только при EZQ_FINAL_SHOTS=1 (чтобы обычный прогон не перезаписывал снимки в репо). */
-export async function shot(page: Page, name: string): Promise<void> {
+export async function shot(page: Page, name: string, prefix = 'final', settleMs = 400): Promise<void> {
   if (!process.env.EZQ_FINAL_SHOTS) return;
-  await page.waitForTimeout(400);
-  await page.screenshot({ path: `${SHOTS_DIR}/final-${name}.png` });
+  if (settleMs) await page.waitForTimeout(settleMs);
+  await page.screenshot({ path: `${SHOTS_DIR}/${prefix}-${name}.png` });
 }
 
 /**
@@ -50,8 +52,11 @@ async function check(s: Scope, expectCorrect: boolean): Promise<void> {
 /** Как ученик: клик по светящемуся предмету → Изик идёт к нему → «Пройти задачу» → панель загадки. */
 export async function openPuzzle(s: Scope, pid: string): Promise<void> {
   await expect(s.locator('.ezq-qpanel')).toBeHidden({ timeout: 10_000 });
-  await s.locator(`.ezq-qobj[data-puzzle="${pid}"]`).click();
-  const go = s.locator('.ezq-qact__go');
+  const obj = s.locator(`.ezq-qobj[data-puzzle="${pid}"]`);
+  const id = await obj.getAttribute('data-obj');
+  await obj.click();
+  // Кнопка именно этого предмета: по пути Изик может пройти мимо другого (к проигрывателю — мимо сундука).
+  const go = s.locator(`.ezq-qact[data-obj="${id}:o"] .ezq-qact__go`);
   await expect(go).toBeVisible({ timeout: 10_000 });
   await go.click();
   await expect(s.locator('.ezq-qpanel__check')).toBeVisible();
@@ -73,10 +78,51 @@ async function solveSecond(s: Scope, room: 1 | 2 | 3 | 4, hooks: QuestHooks): Pr
   await check(s, true);
 }
 
-/** Временная кнопка перехода (до двери таска 06). */
-async function next(s: Scope): Promise<void> {
+const ROOM_KEYS = { 1: 'bedroom', 2: 'kitchen', 3: 'library', 4: 'attic' } as const;
+
+/** Плашка «Быстрее пройди в дверь» не закрывает ✓ решённых предметов, «Решено ✓ +N» и дверь со стрелкой. */
+async function expectBannerClear(s: Scope): Promise<void> {
+  const banner = s.locator('.ezq-qbanner');
+  await banner.evaluate((b) => Promise.all(b.getAnimations().map((a) => a.finished)));
+  const bb = (await banner.boundingBox())!;
+  await expect(s.locator('.ezq-qobj__check')).toHaveCount(2);
+  await expect(s.locator('.ezq-qact__done')).toBeVisible(); // Изик у только что решённого предмета
+  const others = [
+    ...(await s.locator('.ezq-qobj__check').all()),
+    s.locator('.ezq-qact'),
+    s.locator('.ezq-qdoor'),
+    s.locator('.ezq-qdoor__arrow'),
+  ];
+  for (const o of others) {
+    const ob = (await o.boundingBox())!;
+    const overlap = bb.x < ob.x + ob.width && ob.x < bb.x + bb.width && bb.y < ob.y + ob.height && ob.y < bb.y + bb.height;
+    expect(overlap, `плашка перекрывает ${await o.getAttribute('class')}`).toBe(false);
+  }
+}
+
+/** Обе загадки решены → дверь светится, плашка; тап по двери → Изик уходит в неё → следующая комната. */
+async function throughDoor(s: Scope, from: 1 | 2 | 3, hooks: QuestHooks): Promise<void> {
   await expect(s.locator('.ezq-qpanel')).toBeHidden({ timeout: 10_000 });
-  await s.locator('.ezq-qnext').click();
+  const door = s.locator('.ezq-qdoor');
+  await expect(door).toHaveAttribute('data-state', 'open');
+  await expect(s.locator('.ezq-qbanner')).toHaveText(DOOR_OPEN_TEXT);
+  await expect(door.locator('.ezq-qdoor__arrow')).toBeVisible();
+  await expectBannerClear(s);
+  if (from === 1) await hooks.onWalk?.('door-open');
+  await door.click();
+  const quest = s.locator('.ezq-quest');
+  await expect(quest).toHaveAttribute('data-mode', 'door', { timeout: 10_000 });
+  await expect(s.locator('.ezq-qbanner')).toBeHidden();
+  if (from === 1 && hooks.onWalk) {
+    await expect(s.locator('.ezq-qwipe')).toBeVisible();
+    await hooks.onWalk('door-wipe');
+  }
+  await expect(s.locator('.ezq-qstage')).toHaveAttribute('data-room', ROOM_KEYS[(from + 1) as 2 | 3 | 4]);
+  await expect(s.locator('.ezq-qcard')).toHaveText(`Комната ${from + 1} из 4 · ${['Кухня', 'Библиотека', 'Чердак'][from - 1]}`);
+  await expect(quest).toHaveAttribute('data-mode', 'walk', { timeout: 10_000 });
+  await expect(s.locator('.ezq-qwipe')).toBeHidden();
+  await expect(s.locator('.ezq-qhud__room')).toHaveText(new RegExp(`^Комната ${from + 1} из 4`));
+  await hooks.onWalk?.(`room${from + 1}`);
 }
 
 async function hint(s: Scope, level: 1 | 2): Promise<void> {
@@ -93,6 +139,8 @@ export interface QuestHooks {
   onRoom?(tag: 'room' | 'puzzle'): Promise<void>;
   /** Проверка экрана (например, отсутствие горизонтальной прокрутки) в каждой комнате. */
   eachRoom?(): Promise<void>;
+  /** Снимки ходьбы: комната после входа, декор, экран компьютера, дверь, переход, постер. */
+  onWalk?(tag: string): Promise<void>;
 }
 
 export async function playQuest(s: Scope, name: string | null, plan: QuestPlan, hooks: QuestHooks = {}): Promise<void> {
@@ -100,9 +148,26 @@ export async function playQuest(s: Scope, name: string | null, plan: QuestPlan, 
   await expect(input).toBeVisible();
   if (name !== null) await input.fill(name);
   await s.locator('.ezq-intro__start').click();
+  await hooks.onWalk?.('room1');
+
+  // Декор: Изик подходит к гитаре — облачко с репликой.
+  await s.locator('.ezq-qobj[data-obj="guitar"]').click();
+  await expect(s.locator('.ezq-qsay--decor')).toHaveText('Брень! Когда-нибудь напишу песню на JavaScript 🎸', { timeout: 10_000 });
+  await hooks.onWalk?.('decor');
+  // Дверь закрыта, пока не решены обе загадки.
+  await s.locator('.ezq-qdoor').click();
+  await expect(s.locator('.ezq-qsay--door')).toHaveText('Дверь закрыта — реши обе загадки (0/2)', { timeout: 10_000 });
+  await hooks.onWalk?.('door-closed');
+  await expect(s.locator('.ezq-quest')).toHaveAttribute('data-mode', 'walk');
 
   // Комната 1: имя ← "Изик", возраст ← 12, любитКодить ← true (ловушка — "12").
   await hooks.onRoom?.('room');
+  const screen = s.locator('.ezq-qbrand--screen[data-obj="computer"]');
+  await expect(screen).not.toHaveClass(/ezq-qbrand--on/);
+  await s.locator('.ezq-qobj[data-puzzle="var_types"]').click();
+  await expect(s.locator('.ezq-qact__go')).toBeVisible({ timeout: 10_000 });
+  await expect(screen).toHaveClass(/ezq-qbrand--on/); // экран включился с логотипом при подходе
+  await hooks.onWalk?.('screen');
   await openPuzzle(s, 'var_types');
   await card(s, '"Изик"').click(); await slot(s, 0).click();
   if (plan.room1Wrong) {
@@ -119,7 +184,7 @@ export async function playQuest(s: Scope, name: string | null, plan: QuestPlan, 
   await hooks.eachRoom?.();
   await check(s, true);
   await solveSecond(s, 1, hooks);
-  await next(s);
+  await throughDoor(s, 1, hooks);
 
   // Комната 2: датчик жёлтый → верная ветка — else (третья).
   await openPuzzle(s, 'if_fridge');
@@ -132,7 +197,7 @@ export async function playQuest(s: Scope, name: string | null, plan: QuestPlan, 
   await hooks.eachRoom?.();
   await check(s, true);
   await solveSecond(s, 2, hooks);
-  await next(s);
+  await throughDoor(s, 2, hooks);
 
   // Комната 3: for (let i = 0; i < 5; i++) { shelf.putBook() }.
   await openPuzzle(s, 'for_shelf');
@@ -153,7 +218,7 @@ export async function playQuest(s: Scope, name: string | null, plan: QuestPlan, 
   await hooks.eachRoom?.();
   await check(s, true);
   await solveSecond(s, 3, hooks);
-  await next(s);
+  await throughDoor(s, 3, hooks);
 
   // Комната 4: сначала проигрыватель play("Jazz", 3), затем финальная — runMission ( "ARCADE" ).
   await solveSecond(s, 4, hooks);
@@ -161,6 +226,10 @@ export async function playQuest(s: Scope, name: string | null, plan: QuestPlan, 
   for (const t of [/^runMission$/, /^\($/, /^"ARCADE"$/, /^\)$/]) await card(s, t).click();
   await hooks.eachRoom?.();
   await check(s, true);
+  // Финал: постер Easycode на чердаке загорается, затем триумф.
+  await expect(s.locator('.ezq-qbrand--poster')).toHaveClass(/ezq-qbrand--on/, { timeout: 10_000 });
+  await expect(s.locator('.ezq-triumph')).toHaveCount(0);
+  await hooks.onWalk?.('poster');
   await expect(s.locator('.ezq-triumph')).toBeVisible({ timeout: 15_000 });
 }
 

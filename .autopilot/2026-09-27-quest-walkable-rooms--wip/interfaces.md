@@ -96,3 +96,11 @@ export const PUZZLES_BY_ROOM: Record<RoomIndex, readonly [PuzzleId, PuzzleId]>;
 - `quest/world/walk` (изменено): `nearestWalkable(grid, pt, from?)` — с `from` ищет только в связной области героя, `findPath` делает это сам; `Grid.blocked: Rect[]`; `isWalkable` точный; `PAD_X = 30`. Разметка чердака и библиотеки подогнана под новый отступ (вход библиотеки (120,670), спавн (330,670), подход к двери (392,670)).
 - DOM экрана (для таска 06): предметы — `button.ezq-qobj[data-obj][data-puzzle]` с модификаторами `--puzzle`, `--decor`, `--solved`; действие — `.ezq-qact` (`.ezq-qact__go` / `.ezq-qact__done`); подсказка — `.ezq-qtip`; **временная** кнопка перехода `.ezq-qnext` — её заменяет дверь (переход внутри `goNext()` → `enterRoom(n)`); режим — `root.dataset.mode = intro | walk | puzzle | triumph`.
 - Декор пока только ведёт Изика к себе (облачко и звук — таск 06). Мобильный e2e пока в портрете 390×844 — таск 06 переводит его в горизонталь вместе с «Поверни телефон».
+
+### Из таска 06 — дверь, переход, декор, бренд, поворот телефона
+
+- `mountQuestScreen` — сигнатура прежняя; экспорт `DOOR_OPEN_TEXT` (живёт в `src/quest/texts.ts` — без CSS, его импортирует e2e; `screen.ts` реэкспортирует). Режимы `root.dataset.mode`: `intro | walk | puzzle | door | triumph`; rAF считает ходьбу только в `walk`.
+- DOM: дверь `button.ezq-qdoor[data-state=open|closed]` (`--open`, стрелка `.ezq-qdoor__arrow`); плашка `.ezq-qbanner`; облачко `.ezq-qsay--decor|--door`; затемнение `.ezq-qwipe` (`--fade` при reduced-motion); карточка комнаты `.ezq-qcard`; логотипы `.ezq-qbrand--screen|magnet|poster[data-obj]` (`--on`); ожившый декор `.ezq-qobj--alive`; оверлей поворота `.ezq-qrotate` (не на триумфе). `.ezq-qnext` удалена.
+- Звуки декора пока сопоставлены существующим sfx (note→jump, ding→coin, noteUp→spring, purr→click) — своих патчей в `services/sfx` нет.
+- e2e: `QuestHooks.onWalk(tag)`, `shot(page, name, prefix?, settleMs?)`; мобильный e2e — в горизонтали; скриншоты `walk-*.png` и `final-*.png`.
+- Хореография финала (панель → постер → триумф) идёт по часам сцены `simT` и стоит на паузе «Поверни телефон»; плашка двери — в нижней полосе у двери. Чердак: заплатки углов `'streak'` в `scripts/prep-rooms.py`.
