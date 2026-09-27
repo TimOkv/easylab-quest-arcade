@@ -88,3 +88,11 @@ export const PUZZLES_BY_ROOM: Record<RoomIndex, readonly [PuzzleId, PuzzleId]>;
 - `quest/world/brand`: `easycodeLogoSvg(variant: BrandKind): string` (статичный SVG на 100% контейнера), `EASYCODE_BLUE`, `EASYCODE_LIGHT`.
 - `core/clock`: `STEP_MS`, `MAX_STEPS_PER_FRAME`, `FixedClock`, `createFixedClock(stepMs?)`, `advanceClock(clock, frameMs)`, `clockAlpha(clock)`; `arcade/clock` реэкспортирует под старыми именами.
 - Стенд (только dev, не в сборке): `tests/e2e/world-harness.html?view=sprite` — лист кадров и логотипы; `?view=room&n=1..4` — фон с наложенной разметкой.
+
+### Из таска 05 — экран квеста: ходьба, предметы, «Пройти задачу», HUD, музыка
+
+- `QuestScreenDeps.music?: Music`; `mountQuestScreen(host, deps)` — сигнатура прежняя. Экран зовёт `play('quest')`, при открытой загадке `duck(true)`; кнопки 🔊 и 🎵 в HUD квеста.
+- `quest/scene`: `createRoomStage() → { stage, bg, objects, canvas, ctx, ui, toStage(clientX, clientY): Pt }`, `STAGE_W`, `STAGE_H`. `room.jpg` больше не импортируется (в бандле нет).
+- `quest/world/walk` (изменено): `nearestWalkable(grid, pt, from?)` — с `from` ищет только в связной области героя, `findPath` делает это сам; `Grid.blocked: Rect[]`; `isWalkable` точный; `PAD_X = 30`. Разметка чердака и библиотеки подогнана под новый отступ (вход библиотеки (120,670), спавн (330,670), подход к двери (392,670)).
+- DOM экрана (для таска 06): предметы — `button.ezq-qobj[data-obj][data-puzzle]` с модификаторами `--puzzle`, `--decor`, `--solved`; действие — `.ezq-qact` (`.ezq-qact__go` / `.ezq-qact__done`); подсказка — `.ezq-qtip`; **временная** кнопка перехода `.ezq-qnext` — её заменяет дверь (переход внутри `goNext()` → `enterRoom(n)`); режим — `root.dataset.mode = intro | walk | puzzle | triumph`.
+- Декор пока только ведёт Изика к себе (облачко и звук — таск 06). Мобильный e2e пока в портрете 390×844 — таск 06 переводит его в горизонталь вместе с «Поверни телефон».

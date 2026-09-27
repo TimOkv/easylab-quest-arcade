@@ -48,6 +48,7 @@ export const SCREENS: Record<ScreenName, ScreenFactory<AppContext>> = {
       store: ctx.store,
       sfx: ctx.sfx,
       controller: ctx.controller,
+      music: ctx.music,
       isServerConfigured: ctx.isServerConfigured,
       onGoToArcade: () => ctx.navigate('arcade'),
     }),

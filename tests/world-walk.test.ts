@@ -105,6 +105,34 @@ describe('ROOMS_DEF: разметка комнат', () => {
   });
 });
 
+describe('walk: тап в мебель и в недоступное место', () => {
+  it.each(ROOMS)('комната %i: тап в любое препятствие — путь от точки появления непустой и кончается в выбранной точке', (room) => {
+    const def = ROOMS_DEF[room];
+    const grid = buildGrid(def);
+    const taps: Pt[] = [];
+    for (const o of def.obstacles) {
+      taps.push({ x: o.x + o.w / 2, y: o.y + o.h / 2 }, { x: o.x + 2, y: o.y + o.h - 2 }, { x: o.x + o.w - 2, y: o.y + o.h - 2 });
+    }
+    // и в каждую клетку сцены, где пола нет или он отрезан мебелью
+    for (let y = 10; y < 900; y += 40) for (let x = 10; x < 1600; x += 40) taps.push({ x, y });
+    for (const tap of taps) {
+      const target = nearestWalkable(grid, tap, def.spawn);
+      expect(target, `цель для (${tap.x},${tap.y})`).not.toBeNull();
+      const path = findPath(grid, def.spawn, tap);
+      expect(path.length, `путь к (${tap.x},${tap.y})`).toBeGreaterThan(0);
+      expect(path.at(-1)).toEqual(target);
+    }
+  });
+
+  it('цель выбирается в той же связной области, что и герой, даже если чужой карман ближе', () => {
+    // две комнаты без прохода между ними: тап у стены справа ведёт к ближайшей точке своей половины
+    const grid = buildGrid({ floor: [R(0, 0, 400, 300)], obstacles: [R(190, 0, 210, 300)] });
+    const t = nearestWalkable(grid, { x: 200, y: 150 }, { x: 50, y: 150 })!;
+    expect(t.x).toBeLessThan(190);
+    expect(findPath(grid, { x: 50, y: 150 }, { x: 260, y: 150 }).at(-1)!.x).toBeLessThan(190);
+  });
+});
+
 describe('walk: герой', () => {
   const grid = buildGrid(TOY);
 
@@ -125,7 +153,7 @@ describe('walk: герой', () => {
   });
 
   it('ручной ввод не проходит сквозь стену и скользит вдоль неё', () => {
-    const w = createWalker(grid, { x: 150, y: 100 });
+    const w = createWalker(grid, { x: 120, y: 100 });
     w.setInput({ x: 1, y: 0 });
     for (let i = 0; i < 180; i++) w.step(1 / 60);
     expect(w.pos.x).toBeLessThan(WALL.x);
@@ -151,5 +179,27 @@ describe('walk: герой', () => {
     w.step(1 / 60);
     expect(w.moving).toBe(false);
     expect(w.pos).toEqual(at);
+  });
+});
+
+describe('walk: Изик не наезжает на мебель сбоку', () => {
+  // Тело Изика — 20 колонок спрайта × 3 px = 60 px, т.е. ±30 px от точки между лапами.
+  const BODY_HALF_W = 30;
+
+  it.each(ROOMS)('комната %i: в любой точке, где Изик может стоять, до мебели на той же высоте ≥ 30 px по горизонтали', (room) => {
+    const def = ROOMS_DEF[room];
+    const grid = buildGrid(def);
+    const bad: string[] = [];
+    for (let y = 1; y < 900; y += 5) {
+      for (let x = 1; x < 1600; x += 3) {
+        if (!isWalkable(grid, { x, y })) continue;
+        for (const o of def.obstacles) {
+          if (y < o.y || y > o.y + o.h) continue;
+          const gap = x < o.x ? o.x - x : x > o.x + o.w ? x - (o.x + o.w) : 0;
+          if (gap < BODY_HALF_W) bad.push(`(${x},${y}) у (${o.x},${o.y},${o.w},${o.h}) зазор ${gap}`);
+        }
+      }
+    }
+    expect(bad.slice(0, 5)).toEqual([]);
   });
 });

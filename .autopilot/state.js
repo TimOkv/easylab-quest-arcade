@@ -11,7 +11,7 @@ window.STATE =
   "memoryFile": "CLAUDE.md",
   "skillDir": "/Users/timofejokunev/.claude/skills/autopilot",
   "startedAt": "2026-09-27T14:38:15+03:00",
-  "updatedAt": "2026-09-27T18:58:00+03:00",
+  "updatedAt": "2026-09-27T19:25:00+03:00",
   "finishedAt": null,
   "stages": [
     {
@@ -51,13 +51,13 @@ window.STATE =
       "id": "build",
       "status": "active",
       "startedAt": "2026-09-27T16:19:40+03:00",
-      "note": "3 из 6 тасков готовы"
+      "note": "4 из 6 тасков готовы"
     },
     {
       "id": "review",
       "status": "active",
       "startedAt": "2026-09-27T16:23:30+03:00",
-      "note": "проверено 3 из 6"
+      "note": "проверено 4 из 6"
     },
     {
       "id": "final",
@@ -66,8 +66,8 @@ window.STATE =
   ],
   "requirements": {
     "total": 31,
-    "done": 7,
-    "inTicket": 24,
+    "done": 10,
+    "inTicket": 21,
     "inSpec": 0,
     "placeholder": 0,
     "deferred": 0,
@@ -230,11 +230,32 @@ window.STATE =
         "src/quest/world/",
         "src/core/clock.ts"
       ],
-      "status": "review",
+      "status": "done",
       "retries": 0,
       "repairs": 0,
       "handoffs": 1,
-      "startedAt": "2026-09-27T18:14:00+03:00"
+      "startedAt": "2026-09-27T18:14:00+03:00",
+      "finishedAt": "2026-09-27T19:05:00+03:00",
+      "commit": "99c0368",
+      "tests": {
+        "passed": 320,
+        "failed": 0
+      },
+      "files": [
+        "scripts/prep-rooms.py",
+        "src/assets/rooms/*.webp",
+        "src/core/clock.ts",
+        "src/arcade/clock.ts",
+        "src/arcade/game.ts",
+        "src/arcade/engine.ts",
+        "src/quest/world/rooms.ts",
+        "src/quest/world/walk.ts",
+        "src/quest/world/cat-sprite.ts",
+        "src/quest/world/brand.ts",
+        "tests/world-walk.test.ts",
+        "tests/e2e/world-harness.html",
+        "tests/e2e/world-harness.ts"
+      ]
     },
     {
       "id": "05",
@@ -262,10 +283,11 @@ window.STATE =
       "zone": [
         "src/quest/"
       ],
-      "status": "pending",
+      "status": "review",
       "retries": 0,
       "repairs": 0,
-      "handoffs": 0
+      "handoffs": 0,
+      "startedAt": "2026-09-27T19:05:00+03:00"
     },
     {
       "id": "06",
@@ -326,7 +348,14 @@ window.STATE =
     "T03 src/services/music.ts:290 — опрос isMuted() каждые 25 мс крутится и при выключенной музыке (следствие сигнатуры createMusic(isMuted) в interfaces)",
     "T03 src/services/music.ts — setTimeout в dropBus не отменяется в destroy(); дубль «ленивый ресурс на контекст» (pulse25/noise)",
     "T03 tests/music.test.ts:155,180 — тесты держатся за имя метода AudioParam и порядок создания шин",
-    "T03 music? необязателен в зависимостях экранов аркады и рейтинга — лишние ветки без кнопки 🎵"
+    "T03 music? необязателен в зависимостях экранов аркады и рейтинга — лишние ветки без кнопки 🎵",
+    "T04 src/assets/rooms/attic.webp — заплатки на месте кнопок в углах чердака заметны (размытый прямоугольник справа, тёмно-красное пятно слева); kitchen.webp — светлый прямоугольник у стены ≈1300×100",
+    "T04 scripts/prep-rooms.py:7 — при полях < 16 px картинка растягивается (искажение < 1 %), не строгий contain; мёртвая ветка clone_soft, у split позиционные поля",
+    "T04 src/quest/world/rooms.ts — постер «не для тапа» через radius: 0; прямоугольники предмета и препятствия дублируются у гитары, кресла, телескопа, спящего кота",
+    "T04 arcade/clock — прослойка реэкспорта при том, что game.ts уже импортирует core/clock под псевдонимом",
+    "T04 brand.ts — EASYCODE_LIGHT назван брендовым цветом без источника; копия hex в палитре спрайта; sym20 назван неверно",
+    "T04 tests/world-walk.test.ts:102 — проверка пути в мебель обёрнута в if(path.length), покраснеть не может; импорты посреди файла",
+    "T04 → передано в таск 05: nearestWalkable не учитывает связность; PAD_X=16 при теле Изика ±30 px"
   ],
   "reviewers": {
     "manifestSpec": "rev-ms (a566482ccc494e854)",

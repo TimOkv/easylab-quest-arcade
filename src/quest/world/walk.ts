@@ -8,10 +8,11 @@ export const CELL = 20;
 /** Скорость ходьбы, px сцены в секунду. */
 export const WALK_SPEED = 260;
 /**
- * Поля вокруг мебели: половина ширины Изика по бокам и немного сверху/снизу —
- * чтобы спрайт не наезжал на предмет, который стоит на той же глубине.
+ * Поля вокруг мебели: половина ширины тела Изика по бокам (20 колонок спрайта × 3 px / 2)
+ * и немного сверху/снизу — чтобы спрайт не наезжал на предмет, который стоит на той же глубине.
+ * Поле выдерживается для любой точки, где может стоять Изик (isWalkable), а не только для центров клеток.
  */
-export const PAD_X = 16;
+export const PAD_X = 30;
 export const PAD_Y = 6;
 
 export interface Grid {
@@ -20,6 +21,8 @@ export interface Grid {
   readonly cell: number;
   /** 1 — клетка проходима; индекс row * cols + col. */
   readonly walkable: Uint8Array;
+  /** Мебель, расширенная на PAD_X/PAD_Y: сюда не встаёт ни одна точка героя. */
+  readonly blocked: readonly Rect[];
 }
 
 const inRect = (x: number, y: number, r: Rect): boolean => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
@@ -43,7 +46,7 @@ export function buildGrid(def: Pick<RoomDef, 'floor' | 'obstacles'>, cell: numbe
       if (def.floor.some((f) => inRect(x, y, f)) && !pads.some((o) => inRect(x, y, o))) walkable[r * cols + c] = 1;
     }
   }
-  return { cols, rows, cell, walkable };
+  return { cols, rows, cell, walkable, blocked: pads };
 }
 
 const cellOf = (grid: Grid, p: Pt): [number, number] => [Math.floor(p.x / grid.cell), Math.floor(p.y / grid.cell)];
@@ -54,21 +57,35 @@ function cellOpen(grid: Grid, c: number, r: number): boolean {
 
 const center = (grid: Grid, c: number, r: number): Pt => ({ x: c * grid.cell + grid.cell / 2, y: r * grid.cell + grid.cell / 2 });
 
-/** Точка стоит на проходимой клетке. */
+/** Точка стоит на проходимой клетке и сама не заходит в поле вокруг мебели. */
 export function isWalkable(grid: Grid, p: Pt): boolean {
   if (!(p.x >= 0 && p.y >= 0)) return false;
   const [c, r] = cellOf(grid, p);
-  return cellOpen(grid, c, r);
+  return cellOpen(grid, c, r) && !grid.blocked.some((o) => inRect(p.x, p.y, o));
 }
 
-/** Сама точка, если проходима; иначе центр ближайшей проходимой клетки (null — сетка пуста). */
-export function nearestWalkable(grid: Grid, p: Pt): Pt | null {
-  if (isWalkable(grid, p)) return { x: p.x, y: p.y };
+/**
+ * Сама точка, если проходима; иначе центр ближайшей проходимой клетки (null — идти некуда).
+ * С `from` — только среди клеток, до которых можно дойти от `from` (та же связная область),
+ * чтобы тап по мебели не выбрал отрезанный карман пола.
+ */
+export function nearestWalkable(grid: Grid, p: Pt, from?: Pt): Pt | null {
+  let reach: Uint8Array | null = null;
+  if (from) {
+    const start = nearestWalkable(grid, from);
+    if (!start) return null;
+    reach = reachable(grid, start);
+  }
+  const ok = (c: number, r: number): boolean => grid.walkable[r * grid.cols + c] === 1 && (!reach || reach[r * grid.cols + c] === 1);
+  if (isWalkable(grid, p)) {
+    const [c, r] = cellOf(grid, p);
+    if (ok(c, r)) return { x: p.x, y: p.y };
+  }
   let best: Pt | null = null;
   let bestD = Infinity;
   for (let r = 0; r < grid.rows; r++) {
     for (let c = 0; c < grid.cols; c++) {
-      if (!grid.walkable[r * grid.cols + c]) continue;
+      if (!ok(c, r)) continue;
       const q = center(grid, c, r);
       const d = (q.x - p.x) ** 2 + (q.y - p.y) ** 2;
       if (d < bestD) {
@@ -78,6 +95,30 @@ export function nearestWalkable(grid: Grid, p: Pt): Pt | null {
     }
   }
   return best;
+}
+
+/** Клетки, достижимые от проходимой точки (те же шаги, что у A*: 8 направлений без срезания углов). */
+function reachable(grid: Grid, from: Pt): Uint8Array {
+  const seen = new Uint8Array(grid.cols * grid.rows);
+  const [sc, sr] = cellOf(grid, from);
+  const stack = [sr * grid.cols + sc];
+  seen[stack[0]] = 1;
+  while (stack.length) {
+    const cur = stack.pop()!;
+    const cc = cur % grid.cols;
+    const cr = (cur - cc) / grid.cols;
+    for (const [dx, dy] of NEIGH) {
+      const nc = cc + dx;
+      const nr = cr + dy;
+      if (!cellOpen(grid, nc, nr)) continue;
+      if (dx && dy && (!cellOpen(grid, cc + dx, cr) || !cellOpen(grid, cc, cr + dy))) continue;
+      const ni = nr * grid.cols + nc;
+      if (seen[ni]) continue;
+      seen[ni] = 1;
+      stack.push(ni);
+    }
+  }
+  return seen;
 }
 
 /** Прямая a→b целиком по проходимым клеткам (проверка с шагом в четверть клетки). */
@@ -97,12 +138,14 @@ const NEIGH: ReadonlyArray<[number, number, number]> = [
 
 /**
  * Путь от `from` к `to` в обход мебели: точки после старта, последняя — `to`
- * (или ближайшая к нему проходимая точка, если `to` в мебели/стене). [] — идти некуда/незачем.
+ * (или ближайшая к нему достижимая точка, если `to` в мебели, в стене или в отрезанном кармане).
+ * [] — идти некуда.
  */
 export function findPath(grid: Grid, from: Pt, to: Pt): Pt[] {
   const start = nearestWalkable(grid, from);
-  const goal = nearestWalkable(grid, to);
-  if (!start || !goal) return [];
+  if (!start) return [];
+  const goal = nearestWalkable(grid, to, start);
+  if (!goal) return [];
   const [sc, sr] = cellOf(grid, start);
   const [gc, gr] = cellOf(grid, goal);
   const n = grid.cols * grid.rows;
