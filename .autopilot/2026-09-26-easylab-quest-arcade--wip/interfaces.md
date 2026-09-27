@@ -77,3 +77,52 @@ export interface CuratorSync { isConfigured: boolean; syncNow(): Promise<'synced
 - CSS-токены на `.ezq-root`: `--ezq-blue, -blue-light, -white, -gray, -black, -lilac, -pale-blue, -cyan, -sky, -magenta, -red, -success, -navy, -navy-deep, -wood, -wood-dark, -wood-light, -gold, -silver, -bronze, -font, -font-mono, -safe-top/right/bottom/left, -bg, -panel-bg, -panel-fg, -panel-muted, -panel-border, -radius, -shadow`. Светлая тема — атрибут `[data-ezq-theme="light"]`. Готовые классы: `.ezq-btn`, `.ezq-btn--icon`, `.ezq-scroll` (единственное место, где работает прокрутка), `.ezq-screen`, `.ezq-stage`.
 - Тесты: `npm test`; один файл — `npx vitest run <path>`; CSS-линтер — `tests/css-prefix.test.ts` (сканирует все `.css` в `src/`).
 - Версии: TypeScript 7, Vite 8, Vitest 5.
+
+### Из таска 02 — база и сервисы
+
+- `src/services/rest.ts` — `createRestClient({ url, anonKey, fetchImpl?, timeoutMs = 8000 }) → RestClient { isConfigured, select<T>(pathWithQuery), rpc<T>(name, args) }`; `createRestClientFromEnv(fetchImpl?)`. Ошибки: `NotConfiguredError`; `NetworkError` (сеть, таймаут, 5xx/408/429); `RpcError(code, message, status)` — `code` = префикс сообщения или `HTTP_<status>`.
+- `src/services/curator.ts` — `createCuratorSync(rest, store, opts?{ onCodeChanged?(code), win?, random? }) → CuratorSync`; `MAX_CODE_REISSUES = 5`. `startRetryLoop` срабатывает сразу, на `online` и когда `quest.isCompleted` становится true. `restoreByStudent` заполняет квест, открывает аркаду, ставит `currentScreen = 'arcade'`.
+- `src/services/leaderboard.ts` — `createLeaderboardService(rest, store, storage, opts?{ win?, curator?: { syncNow }, now? }) → LeaderboardService & { startRetryLoop(): () => void }`; `PENDING_KEY = 'ezq_pending_scores_v1'`, `MAX_PENDING = 50`, `TOP_QUERY`. **Забег уходит только после регистрации квеста у куратора — таск 05 обязан передать `{ curator }` и запустить оба retry-цикла.**
+- RPC (все возвращают jsonb):
+  - `register_quest_completion(p_code, p_player_name, p_student_id, p_coins, p_completed_at)` → `{ verification_code, coins_earned, completed_at, player_name, restored }`
+  - `restore_by_student(p_student_id)` → `{ verification_code, coins_earned, player_name, completed_at }` | null
+  - `submit_arcade_score(p_run_id uuid, p_code, p_session_id, p_student_id, p_player_name, p_score, p_time_spent int, p_jumps)` → `{ counted, season_total, today_counted, daily_limit, rank, gap_to_top10, is_hidden, season_ends_at, season_closed }`
+  - `get_my_standing(p_code)` → те же поля без `counted` | null; `get_season_info()` → `{ title, ends_at, daily_limit, is_closed }`
+  - Куратор, первым аргументом `p_secret`: `curator_check`, `curator_find(p_code)` (карточка с `possible_duplicate`), `curator_recent(p_limit ≤ 50)`, `curator_set_awarded(p_code, p_awarded)`, `curator_leaderboard`, `curator_set_hidden(p_code, p_hidden)`, `curator_set_daily_limit(p_limit 100..100000)`, `curator_set_countdown(p_title, p_ends_at | null)`, `curator_finish_season(p_next_title)`, `curator_winners`. Точные имена параметров — в `supabase/schema.sql`.
+  - Только админ (не выдан anon): `ezq_set_curator_secret(secret ≥ 8)`. Хэш — встроенный `sha256()`.
+  - Коды ошибок: `NO_QUEST BAD_CODE BAD_NAME BAD_COINS CHEAT_SPEED TOO_SHORT SCORE_RANGE RATE_LIMIT CODE_TAKEN FORBIDDEN BAD_LIMIT`.
+- Черновик Apps Script лежит в `supabase/google-apps-script.gs`; по спецификации его место — `integrations/google-apps-script/Code.gs`, владелец — **таск 06**: перенести туда (из `supabase/` удалить), не держать две копии.
+- Для таска 05: `restoreByStudent` пишет `navigation.currentScreen = 'arcade'`, но роутер реагирует только на внешние (`external`) изменения store. После `true` проводка сама вызывает переход роутера в аркаду.
+- `RunResult.runId` обязан быть UUID v4 (`crypto.randomUUID()` или общий генератор id из `core/state`) — сервис отправляет его как `p_run_id uuid`; не-UUID получает новый id и может засчитаться дважды.
+
+### Из таска 03 — квест
+
+- `src/quest/screen.ts` — `mountQuestScreen(host, { store, sfx, controller, isServerConfigured: boolean, onGoToArcade() }) → { destroy() }`; CSS подключается внутри модуля. При монтировании с `isCompleted` сразу показывает триумф.
+- `src/quest/controller.ts` — `createQuestController(store, { onCompleted?(state), now?(), randomFn?() }) → { submit(room, answer) → { correct, reward?, mistake?, message?, rejected?: 'LOCKED'|'NOT_CURRENT'|'ALREADY_SOLVED'|'INCOMPLETE' }, useHint(room) → string | null, canUseHint(room, 1|2), advance() → boolean, startQuest(name) → PlayerNameResult | { ok:false, error:'LOCKED' }, currentReward(room) }`.
+- `src/quest/puzzles.ts` — `PUZZLES: Record<RoomIndex, PuzzleDef>`; `check()` возвращает ещё `message` (дружелюбный текст ошибки).
+- Запись в store: «Проверить» → `rooms[n].attempts++` до результата; верно → `isSolved`, `earnedCoins`, `totalCoinsEarned`; 4-я комната одним update → `isCompleted`, `completedAt`, `verificationCode`, `arcade.isUnlocked`. `startQuest` пишет `leaderboard.playerName` и `navigation.currentScreen = 'quest'`.
+- **Для таска 05:** роутер не должен уводить с квеста в момент, когда `isCompleted` становится true (триумф появляется через ~2.6 с, уходит только по `onGoToArcade`); редирект в аркаду — только при старте/перезагрузке. `onCompleted` подключить к `curatorSync.syncNow()` и мосту; статус отправки на триумфе обновляется сам по `quest.isSyncedWithCurator`.
+- Временные `src/quest/dev/` и `tests/quest-shots.mjs` (скриншоты) — удалить в таске 05 или 07, когда появится настоящая проводка.
+
+### Из таска 06 — куратор
+
+- `src/verify/page.ts` — `mountVerifyPage(root, { rest, win?, refreshMs? }) → { destroy() }`; `src/verify/season.ts` — `buildSeasonPanel(...)`; `src/verify/format.ts` — `formatMsk / formatMskShort / formatMskClock / toMskInput / fromMskInput` (время МСК — переиспользовать, не писать свои).
+- `integrations/google-apps-script/Code.gs` — `doPost` принимает `{ secret, event: 'insert'|'awarded', row: { time, verification_code, player_name, student_id, coins_earned, status } }` (тот же формат шлёт pg_net-триггер), плюс `doGet`, `ezqSelfTest`. Копия в `supabase/` удалена.
+- Документы: `docs/SUPABASE_SETUP.md`, `docs/GOOGLE_SHEETS.md`. README и `docs/INTEGRATION.md` — таск 07.
+
+### Из таска 04 — аркада
+
+- `src/arcade/screen.ts` (реэкспорт из `src/arcade/index.ts`) — `mountArcadeScreen(host, { store, sfx, onGameOver(RunResult), onOpenLeaderboard(), autoStart?, readInput?(world, out) }) → { destroy() }`. `autoStart: true` — для кнопки «Ещё раз» (сразу начинает забег). `recordRun(store, result, now)`.
+- Движок: `createWorld(seed, { recordScore? })`, `stepWorld(world, { left, right }, dt)`, `botInput(world, out)`, `renderWorld(ctx, world, alpha, sprites, extras?)`, `createArcadeGame(canvas, {...}) → { start, pause, resume, destroy, isRunning, isPaused, world, stats, resetStats, setPixelRatio }`, `newRunSeed()`, `newRunId(crypto?)` → UUID v4.
+- `buildSprites() → SpriteSet`; `drawCoinIcon(canvas)`.
+- Game over одним update: `arcade.highScore = max`, `bestHeightPx = max`, `totalRunsPlayed += 1`, `lastRun = { runId, score, durationSeconds, jumpsCount, timestamp, seed, countedScore: null }`; затем через ~0.9 с `onGameOver(RunResult)`. Переход на рейтинг и отправку делает проводка (таск 05).
+- e2e аркады: `tests/e2e/arcade.spec.ts` поднимает свой Vite dev на порту **5199** со страницей `tests/e2e/arcade-harness.html` (не в сборке). Другим e2e этот порт не занимать. Скриншоты — при `EZQ_SHOTS=1`.
+
+### Из таска 05 — проводка, рейтинг, мост
+
+- `src/leaderboard/` — `mountLeaderboardScreen(host, { store, sfx?, service, lastRun, onPlayAgain, onBack }) → { destroy }`; `REFRESH_MS = 20000`, `formatCountdown(ms)`, `outcomeText(outcome, run)`.
+- `src/services/bridge.ts` — `createBridge({ win?, extraOrigins? }) → { isEmbedded, onAuthInit(cb) → off, announceReady, sendQuestCompleted, sendGameFinished, destroy }`; `isAllowedOrigin(origin, extra[])` (https easycode-lab.ru и *.easycode-lab.ru на порту по умолчанию + extra, точные или `*.`); `parseExtraOrigins(env)`; собственный origin — автоматически.
+- Протокол: исходящий конверт `{ source: 'ezq', version: 1, type, payload }`. `EASYLAB_READY {}`; `EASYLAB_QUEST_COMPLETED { coinsEarned, maxCoins: 75, verificationCode, completedAt: ISO, studentId, rooms: [{ room, id, earnedCoins, maxReward, attempts, hintsUsed }] }` (повторно — если куратор перевыпустил код); `EASYLAB_GAME_FINISHED { score, highScore, seasonTotal, durationSeconds, jumpsCount, verificationCode }` после `submitRun`. Входящее: `{ type: 'EASYLAB_AUTH_INIT', payload: { studentId, name, theme } }` (конверт не обязателен), только от `window.parent` с разрешённого origin. Отправленное до того, как стал известен origin родителя, копится.
+- `src/app/app.ts` — `mountApp(root, { storage?, win?, rest?, bridge?, screens?, authWaitMs? }) → { store, sfx, bridge, controller, curator, leaderboard, router (null пока загрузка), ready, destroy }`; `questCompletedPayload(state)`, `AUTH_WAIT_MS`, `RESTORED_TOAST`. `AppContext = { root, store, sfx, navigate, controller, curator, leaderboard, bridge, isServerConfigured, lastRun, autoStart, onGameOver(r) }`.
+- Порты: скриншоты таска 05 — 5212 (фейковый Supabase через page.route) и 5213 (демо). 5199 — e2e аркады.
+- Не удалены (нет разрешения у исполнителя): `src/quest/dev/`, `tests/quest-shots.mjs` — таск 07.

@@ -1,6 +1,7 @@
 // e2e аркады: собственный dev-сервер Vite со страницей-стендом tests/e2e/arcade-harness.html.
 import { test, expect } from 'playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
+import { SHOTS_DIR } from './support/flow';
 
 const PORT = 5199;
 let server: ViteDevServer;
@@ -61,7 +62,7 @@ test('экран: профиль, «Играть», падение → store о�
   await expect(card).toContainText('Последний забег');
 });
 
-// Скриншоты для приёмки: EZQ_SHOTS=<папка> npx playwright test tests/e2e/arcade.spec.ts
+// Скриншоты для приёмки (в tests/e2e/__screenshots__): EZQ_SHOTS=1 npx playwright test tests/e2e/arcade.spec.ts
 for (const vp of [
   { name: 'desktop', width: 1280, height: 720 },
   { name: 'phone', width: 390, height: 844 },
@@ -69,7 +70,7 @@ for (const vp of [
   test(`скриншоты аркады: ${vp.name}`, async ({ page }) => {
     test.skip(!process.env.EZQ_SHOTS, 'только по EZQ_SHOTS');
     test.setTimeout(600_000);
-    const dir = process.env.EZQ_SHOTS!;
+    const dir = SHOTS_DIR;
     await page.setViewportSize({ width: vp.width, height: vp.height });
     await page.goto(url('mode=screen&bot=1&highScore=470'));
     await page.waitForTimeout(500);
