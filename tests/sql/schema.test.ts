@@ -1,5 +1,5 @@
 // RPC-контракт supabase/schema.sql в PGlite (реальный Postgres в WASM).
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
@@ -8,6 +8,12 @@ const SCHEMA = readFileSync(resolve(import.meta.dirname, '../../supabase/schema.
 const SECRET = 'curator-secret-42';
 
 let db: PGlite;
+
+/** Окно лимита — час эпохи из ezq_rl_hour(); в тестах час фиксирован, чтобы граница hh:00 не обнуляла счётчик. */
+const HOUR = 480_000;
+const setHour = (h: number) =>
+  db.exec(`create or replace function public.ezq_rl_hour() returns bigint language sql stable
+           set search_path = public, pg_temp as $$ select ${h}::bigint $$`);
 
 /** Вызов RPC от имени анонимной роли (как через PostgREST с anon-ключом). */
 async function rpc<T = any>(fn: string, args: unknown[] = []): Promise<T> {
@@ -27,8 +33,8 @@ const register = (code: string, name = 'Аня', student: string | null = null, 
   names.set(code, name.trim());
   return rpc('register_quest_completion', [code, name, student, coins, at]);
 };
-const submit = (code: string, score: number, time = 100, opts: { run?: string; name?: string; jumps?: number } = {}) =>
-  rpc('submit_arcade_score', [opts.run ?? uuid(), code, 'sess-1', null, opts.name ?? names.get(code) ?? 'Аня', score, time, opts.jumps ?? 10]);
+const submit = (code: string, score: number, time = 100, opts: { run?: string; name?: string; jumps?: number; session?: string } = {}) =>
+  rpc('submit_arcade_score', [opts.run ?? uuid(), code, opts.session ?? 'sess-1', null, opts.name ?? names.get(code) ?? 'Аня', score, time, opts.jumps ?? 10]);
 
 beforeAll(async () => {
   db = new PGlite();
@@ -43,7 +49,10 @@ beforeEach(async () => {
     delete from public.seasons where not is_active;
     update public.seasons set ends_at = null, title = 'Сезон 1' where is_active;
     update public.ezq_settings set daily_score_limit = 3000;
+    select public.ezq_rate_reset();
+    select set_config('request.headers', '', false);
   `);
+  await setHour(HOUR);
 });
 
 describe('schema.sql: развёртывание и доступ', () => {
@@ -60,9 +69,16 @@ describe('schema.sql: развёртывание и доступ', () => {
       await expect(db.query(`insert into public.quest_completions (verification_code, player_name, coins_earned) values ('EZ-2222','x',75)`)).rejects.toThrow(/permission denied/);
       await expect(db.query(`update public.ezq_settings set daily_score_limit = 999999`)).rejects.toThrow(/permission denied/);
       await expect(db.query(`select public.ezq_set_curator_secret('hack')`)).rejects.toThrow(/permission denied/);
+      await expect(db.query(`select public.ezq_rate_reset()`)).rejects.toThrow(/permission denied/);
+      await expect(db.query(`select nextval('ezq_private.rl_0')`)).rejects.toThrow(/permission denied/);
     } finally {
       await db.exec('RESET ROLE');
     }
+  });
+
+  it('ezq_fail бросает исключение — объявлена volatile, чтобы планировщик не вычислял её заранее', async () => {
+    const r = await db.query<{ v: string }>(`select provolatile as v from pg_proc where oid = 'public.ezq_fail(text,text)'::regprocedure`);
+    expect(r.rows[0].v).toBe('v');
   });
 
   it('представление leaderboard читается anon и не содержит кодов и student_id', async () => {
@@ -76,6 +92,64 @@ describe('schema.sql: развёртывание и доступ', () => {
     } finally {
       await db.exec('RESET ROLE');
     }
+  });
+});
+
+describe('schema.sql поверх базы из §4.2 брифа (старая таблица leaderboard)', () => {
+  // DDL §4.2 CLAUDE.md дословно + права, которые Supabase раздаёт anon/authenticated на новые таблицы по умолчанию.
+  const BRIEF_DDL = `
+    create role anon nologin; create role authenticated nologin;
+    create table if not exists public.quest_completions (
+      id uuid primary key default gen_random_uuid(),
+      verification_code varchar(10) not null unique,
+      player_name varchar(32) not null,
+      student_id text null,
+      coins_earned integer not null check (coins_earned >= 0 and coins_earned <= 75),
+      rooms_solved integer not null default 4,
+      completed_at timestamptz default now(),
+      is_awarded boolean default false,
+      awarded_at timestamptz null);
+    create index if not exists idx_quest_verification on public.quest_completions (verification_code);
+    create table if not exists public.leaderboard (
+      id uuid primary key default gen_random_uuid(),
+      session_id text not null unique,
+      student_id text null,
+      player_name varchar(16) not null,
+      score integer not null check (score >= 0 and score <= 50000),
+      time_spent_seconds integer not null check (time_spent_seconds >= 5),
+      verification_code varchar(10) not null references public.quest_completions(verification_code),
+      jumps_count integer default 0,
+      created_at timestamptz default now());
+    create index if not exists idx_leaderboard_top on public.leaderboard (score desc, created_at asc);
+    grant usage on schema public to anon, authenticated;
+    grant all on public.quest_completions, public.leaderboard to anon, authenticated;
+  `;
+  let old: PGlite;
+
+  beforeAll(async () => {
+    old = new PGlite();
+    await old.exec(BRIEF_DDL);
+    await old.exec(SCHEMA);
+    await old.exec(SCHEMA);
+  }, 60_000);
+
+  it('leaderboard_legacy_v0: RLS включён, у anon и authenticated нет прав', async () => {
+    const rls = await old.query<{ on: boolean }>(`select relrowsecurity as on from pg_class where oid = 'public.leaderboard_legacy_v0'::regclass`);
+    expect(rls.rows[0].on).toBe(true);
+    for (const role of ['anon', 'authenticated']) {
+      await old.exec(`SET ROLE ${role}`);
+      try {
+        await expect(old.query('select * from public.leaderboard_legacy_v0'), role).rejects.toThrow(/permission denied/);
+        await expect(old.query(`insert into public.leaderboard_legacy_v0 (session_id, player_name, score, time_spent_seconds, verification_code) values ('s','x',1,5,'EZ-2222')`), role).rejects.toThrow(/permission denied/);
+      } finally {
+        await old.exec('RESET ROLE');
+      }
+    }
+  });
+
+  it('индекс ТОПа из брифа не занимает имя индекса новой таблицы', async () => {
+    const idx = await old.query<{ t: string }>(`select indrelid::regclass::text as t from pg_index where indexrelid = 'public.idx_leaderboard_top'::regclass`);
+    expect(idx.rows[0].t).toBe('leaderboard_entries');
   });
 });
 
@@ -96,9 +170,17 @@ describe('register_quest_completion / restore_by_student', () => {
     expect(await rpc('restore_by_student', ['nobody'])).toBeNull();
   });
 
-  it('занятый код другим учеником → CODE_TAKEN', async () => {
+  it('занятый код другим учеником → сервер выдаёт свободный код того же формата и создаёт запись', async () => {
     await register('EZ-2345', 'Петя', null, 58);
-    await expect(register('EZ-2345', 'Маша', null, 40)).rejects.toThrow(/^CODE_TAKEN/);
+    const r = await register('EZ-2345', 'Маша', null, 40);
+    expect(r).toMatchObject({ coins_earned: 40, player_name: 'Маша', restored: false });
+    expect(r.verification_code).toMatch(/^EZ-[2-9A-HJ-NP-Z]{4}$/);
+    expect(r.verification_code).not.toBe('EZ-2345');
+    const rows = (await db.query<any>('select verification_code, player_name, coins_earned from public.quest_completions order by player_name')).rows;
+    expect(rows).toEqual([
+      { verification_code: r.verification_code, player_name: 'Маша', coins_earned: 40 },
+      { verification_code: 'EZ-2345', player_name: 'Петя', coins_earned: 58 },
+    ]);
   });
 
   it('повтор того же прохождения (ответ потерялся) → идемпотентно, без CODE_TAKEN', async () => {
@@ -158,6 +240,14 @@ describe('submit_arcade_score', () => {
     expect((await db.query<any>('select count(*)::int n from public.arcade_runs')).rows[0].n).toBe(1);
   });
 
+  it('повтор чужого run_id с другим кодом не отдаёт чужой забег', async () => {
+    await register('EZ-BBBB', 'Петя');
+    const run = uuid();
+    await submit('EZ-AAAA', 400, 100, { run });
+    await expect(submit('EZ-BBBB', 400, 100, { run })).rejects.toThrow(/^BAD_CODE/);
+    expect(await rpc('get_my_standing', ['EZ-BBBB'])).toMatchObject({ season_total: 0 });
+  });
+
   it('отказы: CHEAT_SPEED, TOO_SHORT, SCORE_RANGE, NO_QUEST, BAD_CODE, BAD_NAME', async () => {
     await expect(submit('EZ-AAAA', 1300, 10)).rejects.toThrow(/^CHEAT_SPEED/); // 130 очк/с
     await expect(submit('EZ-AAAA', 1200, 10)).resolves.toMatchObject({ counted: 1200 }); // ровно 120 — можно
@@ -198,6 +288,124 @@ describe('submit_arcade_score', () => {
   it('get_my_standing без записи — нули; неизвестный код — null', async () => {
     expect(await rpc('get_my_standing', ['EZ-AAAA'])).toMatchObject({ rank: null, season_total: 0, today_counted: 0, daily_limit: 3000, is_hidden: false });
     expect(await rpc('get_my_standing', ['EZ-ZZZZ'])).toBeNull();
+  });
+});
+
+describe('перебор кодов: лимит промахов с одного источника', () => {
+  const MISSES = 30; // промахов в час с одного адреса без последствий
+  // PostgREST кладёт заголовки запроса в GUC request.headers; адрес клиента — первый в x-forwarded-for.
+  const from = (ip: string | null) =>
+    db.query(`select set_config('request.headers', $1, false)`, [ip === null ? '' : JSON.stringify({ 'x-forwarded-for': `${ip}, 10.0.0.1` })]);
+  // Несуществующие коды из алфавита: EZ-Z222, EZ-Z223, …
+  const ALPHA = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const ghost = (i: number) => `EZ-Z${ALPHA[Math.floor(i / 32) % 32]}${ALPHA[i % 32]}2`;
+
+  beforeEach(async () => {
+    await register('EZ-AAAA', 'Аня', 'st-a');
+  });
+  afterEach(async () => {
+    await db.query(`select set_config('request.headers', '', false)`);
+  });
+
+  it(`get_my_standing: ${MISSES} промахов — null, следующий — RATE_LIMIT; с другого адреса всё работает`, async () => {
+    await from('203.0.113.7');
+    for (let i = 0; i < MISSES; i++) expect(await rpc('get_my_standing', [ghost(i)]), ghost(i)).toBeNull();
+    await expect(rpc('get_my_standing', [ghost(MISSES)])).rejects.toThrow(/^RATE_LIMIT/);
+    await from('198.51.100.9');
+    expect(await rpc('get_my_standing', [ghost(MISSES)])).toBeNull();
+    expect(await rpc('get_my_standing', ['EZ-AAAA'])).toMatchObject({ season_total: 0 });
+  });
+
+  it('submit_arcade_score: промахи NO_QUEST копятся, хотя вызов откатывается; свой код принимается и после лимита', async () => {
+    await from('203.0.113.8');
+    for (let i = 0; i < MISSES; i++) await expect(submit(ghost(i), 100), ghost(i)).rejects.toThrow(/^NO_QUEST/);
+    await expect(submit(ghost(MISSES), 100)).rejects.toThrow(/^RATE_LIMIT/);
+    await expect(submit('EZ-AAAA', 100)).resolves.toMatchObject({ counted: 100 }); // ник совпадает с записью квеста
+    await expect(submit('EZ-AAAA', 100, 100, { name: 'Чужой', session: 'sess-thief' })).rejects.toThrow(/^RATE_LIMIT/); // существующий, но не свой — как несуществующий
+  });
+
+  it('честный клиент со своим кодом в лимит не упирается', async () => {
+    await from('203.0.113.10');
+    for (let i = 0; i < 4 * MISSES; i++) expect(await rpc('get_my_standing', ['EZ-AAAA'])).not.toBeNull();
+    for (let i = 0; i < 10; i++) await submit('EZ-AAAA', 100);
+    await expect(register('EZ-AAAA', 'Аня', 'st-a')).resolves.toMatchObject({ verification_code: 'EZ-AAAA' });
+    expect(await rpc('get_my_standing', ['EZ-AAAA'])).toMatchObject({ season_total: 1000 });
+  });
+
+  it('регистрация со свободным кодом не зависит от лимита: 200 подряд с одного адреса проходят и единиц не тратят', async () => {
+    await from('203.0.113.11');
+    for (let i = 0; i < 200; i++) {
+      const r = await register(ghost(i), `Ученик${i}`);
+      expect(r.verification_code, ghost(i)).toBe(ghost(i));
+    }
+    expect((await db.query<any>('select count(*)::int n from public.quest_completions')).rows[0].n).toBe(201);
+    // пробы — коды, которых точно нет (сервер мог случайно выдать любой свободный)
+    const used = new Set((await db.query<any>('select verification_code c from public.quest_completions')).rows.map((r) => r.c));
+    const probes = [...ALPHA].flatMap((x) => [...ALPHA].map((y) => `EZ-Y${x}${y}2`)).filter((c) => !used.has(c)).slice(0, MISSES + 1);
+    for (const c of probes.slice(0, MISSES)) expect(await rpc('get_my_standing', [c]), c).toBeNull();
+    await expect(rpc('get_my_standing', [probes[MISSES]])).rejects.toThrow(/^RATE_LIMIT/);
+  });
+
+  it('занятый код до лимита → запись с другим кодом, замена стоит 4 единицы (как промах)', async () => {
+    await from('203.0.113.20');
+    const r = await register('EZ-AAAA', 'Маша', null, 40);
+    expect(r).toMatchObject({ coins_earned: 40, player_name: 'Маша', restored: false });
+    expect(r.verification_code).toMatch(/^EZ-[2-9A-HJ-NP-Z]{4}$/);
+    expect(r.verification_code).not.toBe('EZ-AAAA');
+    // 120 единиц в час: замена (4) + 29 промахов (116) = 120 — 30-й промах уже RATE_LIMIT
+    for (let i = 0; i < MISSES - 1; i++) expect(await rpc('get_my_standing', [ghost(i)]), ghost(i)).toBeNull();
+    await expect(rpc('get_my_standing', [ghost(MISSES)])).rejects.toThrow(/^RATE_LIMIT/);
+  });
+
+  /** Исчерпать корзину адреса промахами get_my_standing. */
+  const exhaust = async () => {
+    for (let i = 0; i < MISSES; i++) await rpc('get_my_standing', [`EZ-X${ALPHA[i]}22`]);
+    await expect(rpc('get_my_standing', ['EZ-XZ22'])).rejects.toThrow(/^RATE_LIMIT/);
+  };
+
+  it('restore_by_student: найден — 1 единица, после лимита RATE_LIMIT; не найден — null всегда и без единиц', async () => {
+    await from('203.0.113.14');
+    for (let i = 0; i < 4 * MISSES; i++) expect(await rpc('restore_by_student', ['st-a'])).toMatchObject({ verification_code: 'EZ-AAAA' });
+    await expect(rpc('restore_by_student', ['st-a'])).rejects.toThrow(/^RATE_LIMIT/);
+    expect(await rpc('restore_by_student', ['nobody'])).toBeNull();
+    await from('203.0.113.15');
+    for (let i = 0; i < 200; i++) expect(await rpc('restore_by_student', [`nobody-${i}`])).toBeNull();
+    expect(await rpc('restore_by_student', ['st-a'])).toMatchObject({ verification_code: 'EZ-AAAA' }); // 200 «не найдено» не потратили лимит
+  });
+
+  it('исчерпанная корзина: 50 новых учеников с student_id регистрируются, restored → RATE_LIMIT, неизвестный ID в restore_by_student → null', async () => {
+    await from('203.0.113.17');
+    await exhaust();
+    for (let i = 0; i < 50; i++) {
+      await expect(register(ghost(i), `Ученик${i}`, `new-${i}`), `new-${i}`).resolves.toMatchObject({ restored: false });
+    }
+    expect((await db.query<any>(`select count(*)::int n from public.quest_completions where student_id like 'new-%'`)).rows[0].n).toBe(50);
+    await expect(register(ghost(60), 'Аня', 'st-a')).rejects.toThrow(/^RATE_LIMIT/);
+    expect(await rpc('restore_by_student', ['nobody'])).toBeNull();
+  });
+
+  it('исчерпанная корзина: занятый код → RATE_LIMIT, записи не создаётся', async () => {
+    await from('203.0.113.21');
+    await exhaust();
+    const count = async () => (await db.query<any>('select count(*)::int n from public.quest_completions')).rows[0].n;
+    const before = await count();
+    await expect(register('EZ-AAAA', 'Маша', null, 40)).rejects.toThrow(/^RATE_LIMIT/);
+    expect(await count()).toBe(before);
+  });
+
+  it('исчерпанная корзина: свободный код без student_id → регистрация проходит', async () => {
+    await from('203.0.113.22');
+    await exhaust();
+    await expect(register('EZ-W222', 'Маша', null, 40)).resolves.toMatchObject({ verification_code: 'EZ-W222', coins_earned: 40, restored: false });
+    expect((await db.query<any>(`select player_name from public.quest_completions where verification_code = 'EZ-W222'`)).rows).toEqual([{ player_name: 'Маша' }]);
+  });
+
+  it('окно истекло (следующий час) → лимит снят', async () => {
+    await from('203.0.113.13');
+    for (let i = 0; i < MISSES; i++) await rpc('get_my_standing', [ghost(i)]);
+    await expect(rpc('get_my_standing', [ghost(MISSES)])).rejects.toThrow(/^RATE_LIMIT/);
+    await setHour(HOUR + 1);
+    expect(await rpc('get_my_standing', [ghost(MISSES)])).toBeNull();
   });
 });
 

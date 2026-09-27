@@ -13,6 +13,8 @@
 -- (SECURITY DEFINER, search_path зафиксирован). Ошибки — RAISE EXCEPTION с кодом
 -- в начале текста: NO_QUEST, BAD_CODE, BAD_NAME, BAD_COINS, CHEAT_SPEED, TOO_SHORT,
 -- SCORE_RANGE, RATE_LIMIT, CODE_TAKEN, FORBIDDEN, BAD_LIMIT.
+-- Перебор кодов: промахи по чужим/несуществующим кодам ограничены с одного адреса
+-- (раздел «лимит перебора кодов»); счётчики — в схеме ezq_private, сброс — select public.ezq_rate_reset();
 -- =============================================================================
 
 -- ---------------------------------------------------------------- роли (для локальных тестов; в Supabase уже есть)
@@ -34,6 +36,17 @@ begin
   if exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
              where n.nspname = 'public' and c.relname = 'leaderboard' and c.relkind = 'r') then
     alter table public.leaderboard rename to leaderboard_legacy_v0;
+  end if;
+  -- Индекс ТОПа из брифа занимает имя idx_leaderboard_top — уступаем его новой таблице.
+  if exists (select 1 from pg_index i
+             where i.indexrelid = to_regclass('public.idx_leaderboard_top')
+               and i.indrelid = to_regclass('public.leaderboard_legacy_v0')) then
+    alter index public.idx_leaderboard_top rename to idx_leaderboard_legacy_v0_top;
+  end if;
+  -- Переименование сохраняет гранты Supabase по умолчанию — закрываем архив (и на уже мигрированных базах).
+  if to_regclass('public.leaderboard_legacy_v0') is not null then
+    alter table public.leaderboard_legacy_v0 enable row level security;
+    revoke all on public.leaderboard_legacy_v0 from public, anon, authenticated;
   end if;
 end $$;
 
@@ -148,7 +161,7 @@ grant select on public.leaderboard to anon, authenticated;
 -- ---------------------------------------------------------------- внутренние помощники
 
 create or replace function public.ezq_fail(p_code text, p_detail text default null)
-returns void language plpgsql immutable set search_path = public, pg_temp as $$
+returns void language plpgsql volatile set search_path = public, pg_temp as $$
 begin
   raise exception '%', p_code || coalesce(': ' || p_detail, '') using errcode = 'P0001';
 end $$;
@@ -211,6 +224,81 @@ create or replace function public.ezq_daily_limit()
 returns int language sql stable security definer set search_path = public, pg_temp as $$
   select coalesce((select daily_score_limit from public.ezq_settings where id = 1), 3000)
 $$;
+
+-- ---------------------------------------------------------------- лимит перебора кодов (R44, R46)
+-- Код EZ-XXXX — единственное доказательство прохождения, поэтому anon-RPC не должны служить
+-- оракулом существования кода. «Промах» — ответ, выдающий, что кода нет (get_my_standing → null,
+-- submit_arcade_score → NO_QUEST). Найденное по student_id прохождение (restore_by_student, ветка
+-- student_id в register_quest_completion) отдаёт код — 1 единица (ezq_find_by_student); «не найдено» — бесплатно.
+-- Замена занятого кода в register_quest_completion — тоже 4 единицы (после лимита RATE_LIMIT);
+-- регистрация со свободным кодом бесплатна и лимитом не ограничена. CODE_TAKEN не бывает.
+-- Источник — первый адрес x-forwarded-for из request.headers PostgREST; без заголовка — общий пул.
+-- Счётчики — последовательности (nextval/setval не откатываются вместе с RAISE, иначе промах,
+-- закончившийся исключением, не оставил бы следа), 128 корзин по хэшу адреса.
+-- Значение = номер часа эпохи * 1e6 + единицы; окно — календарный час.
+-- Промах = 4 единицы, найденный student_id = 1; лимит 120 единиц в час = 30 промахов.
+-- Час берётся из ezq_rl_hour() — тесты подменяют её, чтобы не зависеть от настенных часов.
+-- Исчерпавшему лимит источнику на чужие/неизвестные коды отвечаем RATE_LIMIT — одинаково для
+-- существующих и несуществующих, иначе RATE_LIMIT/данные снова различили бы их.
+
+create schema if not exists ezq_private;
+revoke all on schema ezq_private from public;
+do $$
+begin
+  for i in 0..127 loop
+    execute format('create sequence if not exists ezq_private.rl_%s', i);
+  end loop;
+end $$;
+
+create or replace function public.ezq_rl_seq()
+returns regclass language plpgsql stable set search_path = public, pg_temp as $$
+declare
+  h text := current_setting('request.headers', true);
+  src text := '';
+begin
+  begin
+    src := btrim(split_part(coalesce(nullif(h, '')::json ->> 'x-forwarded-for', ''), ',', 1));
+  exception when others then
+    src := '';
+  end;
+  return format('ezq_private.rl_%s', mod(abs(hashtext(coalesce(nullif(src, ''), 'shared'))::bigint), 128))::regclass;
+end $$;
+
+create or replace function public.ezq_rl_hour()
+returns bigint language sql stable set search_path = public, pg_temp as $$
+  select floor(extract(epoch from now()) / 3600)::bigint
+$$;
+
+create or replace function public.ezq_rl_limited()
+returns boolean language plpgsql volatile security definer set search_path = public, pg_temp as $$
+declare v bigint;
+begin
+  execute format('select case when is_called then last_value else 0 end from %s', public.ezq_rl_seq()) into v;
+  return v / 1000000 = public.ezq_rl_hour() and v % 1000000 >= 120;
+end $$;
+
+create or replace function public.ezq_rl_add(p_units int)
+returns void language plpgsql volatile security definer set search_path = public, pg_temp as $$
+declare
+  seq regclass := public.ezq_rl_seq();
+  hr bigint := public.ezq_rl_hour();
+  v bigint := nextval(seq);
+begin
+  if v / 1000000 <> hr then
+    perform setval(seq, hr * 1000000 + p_units);
+  elsif p_units > 1 then
+    perform setval(seq, v + p_units - 1);
+  end if;
+end $$;
+
+-- Админ/тесты: обнулить все счётчики (не выдаётся anon).
+create or replace function public.ezq_rate_reset()
+returns void language plpgsql volatile security definer set search_path = public, pg_temp as $$
+begin
+  for i in 0..127 loop
+    perform setval(format('ezq_private.rl_%s', i)::regclass, 1, false);
+  end loop;
+end $$;
 
 -- Позиция ученика в активном сезоне (без записи).
 create or replace function public.ezq_standing(p_code text)
@@ -288,6 +376,36 @@ $$;
 
 -- ---------------------------------------------------------------- RPC ученика
 
+-- Найденное по student_id прохождение отдаёт код, поэтому стоит 1 единицу, а после лимита — RATE_LIMIT.
+-- «Не найдено» — обычная первая регистрация ученика EasyLab: без единиц и без лимита.
+create or replace function public.ezq_find_by_student(p_student text)
+returns public.quest_completions language plpgsql volatile security definer set search_path = public, pg_temp as $$
+declare q public.quest_completions;
+begin
+  select * into q from public.quest_completions where student_id = p_student order by completed_at limit 1;
+  if not found then return q; end if;
+  if public.ezq_rl_limited() then perform public.ezq_fail('RATE_LIMIT'); end if;
+  perform public.ezq_rl_add(1);
+  return q;
+end $$;
+
+-- Свободный кандидат в коды: алфавит core/rules (без 0/O/1/I), байты из gen_random_uuid (криптостойкий ГСЧ).
+create or replace function public.ezq_new_code()
+returns text language plpgsql volatile set search_path = public, pg_temp as $$
+declare
+  a text := '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  b bytea := decode(replace(gen_random_uuid()::text, '-', ''), 'hex');
+  r text := 'EZ-';
+begin
+  for i in 0..3 loop
+    r := r || substr(a, 1 + get_byte(b, i) % 32, 1);  -- 256 делится на 32 — без смещения
+  end loop;
+  return r;
+end $$;
+
+-- Регистрация со свободным кодом не зависит от лимита перебора. Занятый чужой записью код
+-- заменяется свободным (клиент берёт verification_code из ответа), но замена стоит 4 единицы,
+-- а после исчерпания корзины — RATE_LIMIT без записи.
 create or replace function public.register_quest_completion(
   p_code text, p_player_name text, p_student_id text, p_coins int, p_completed_at timestamptz)
 returns jsonb language plpgsql volatile security definer set search_path = public, pg_temp as $$
@@ -295,6 +413,7 @@ declare
   v_name text := public.ezq_norm_name(p_player_name);
   v_student text := nullif(btrim(coalesce(p_student_id, '')), '');
   v_at timestamptz := p_completed_at;
+  v_code text := p_code;
   q public.quest_completions;
 begin
   if not public.ezq_is_code(p_code) then perform public.ezq_fail('BAD_CODE'); end if;
@@ -302,46 +421,57 @@ begin
   if p_coins is null or p_coins < 0 or p_coins > 75 then perform public.ezq_fail('BAD_COINS'); end if;
 
   if v_student is not null then
-    select * into q from public.quest_completions where student_id = v_student order by completed_at limit 1;
-    if found then
+    q := public.ezq_find_by_student(v_student);
+    if q.id is not null then
       return jsonb_build_object('verification_code', q.verification_code, 'coins_earned', q.coins_earned,
         'completed_at', q.completed_at, 'player_name', q.player_name, 'restored', true);
     end if;
   end if;
 
   select * into q from public.quest_completions where verification_code = p_code;
-  if found then
-    -- Повтор той же отправки (ответ потерялся в сети) — не конфликт.
-    if lower(q.player_name) = lower(v_name) and q.coins_earned = p_coins
-       and q.student_id is not distinct from v_student then
-      return jsonb_build_object('verification_code', q.verification_code, 'coins_earned', q.coins_earned,
-        'completed_at', q.completed_at, 'player_name', q.player_name, 'restored', false);
-    end if;
-    perform public.ezq_fail('CODE_TAKEN');
+  -- Повтор той же отправки (ответ потерялся в сети) — та же запись.
+  if found and lower(q.player_name) = lower(v_name) and q.coins_earned = p_coins
+     and q.student_id is not distinct from v_student then
+    return jsonb_build_object('verification_code', q.verification_code, 'coins_earned', q.coins_earned,
+      'completed_at', q.completed_at, 'player_name', q.player_name, 'restored', false);
   end if;
 
   if v_at is null or v_at < now() - interval '30 days' or v_at > now() + interval '5 minutes' then
     v_at := now();
   end if;
-  begin
-    insert into public.quest_completions (verification_code, player_name, student_id, coins_earned, rooms_solved, completed_at, is_awarded)
-      values (p_code, v_name, v_student, p_coins, 4, v_at, false)
-      returning * into q;
-  exception when unique_violation then
-    perform public.ezq_fail('CODE_TAKEN');
-  end;
-  return jsonb_build_object('verification_code', q.verification_code, 'coins_earned', q.coins_earned,
-    'completed_at', q.completed_at, 'player_name', q.player_name, 'restored', false);
+  for attempt in 1..64 loop
+    begin
+      insert into public.quest_completions (verification_code, player_name, student_id, coins_earned, rooms_solved, completed_at, is_awarded)
+        values (v_code, v_name, v_student, p_coins, 4, v_at, false)
+        returning * into q;
+      return jsonb_build_object('verification_code', q.verification_code, 'coins_earned', q.coins_earned,
+        'completed_at', q.completed_at, 'player_name', q.player_name, 'restored', false);
+    exception when unique_violation then
+      -- Присланный код занят чужой записью: замена выдаёт, что он существует, — стоит как промах.
+      -- Исчерпавшему лимит источнику — RATE_LIMIT без записи (клиент повторит позже).
+      if attempt = 1 then
+        if public.ezq_rl_limited() then perform public.ezq_fail('RATE_LIMIT'); end if;
+        perform public.ezq_rl_add(4);
+      end if;
+      v_code := public.ezq_new_code();
+    end;
+  end loop;
+  -- 64 занятых кода подряд при ~1 млн возможных — практически недостижимо; клиент повторит позже.
+  perform public.ezq_fail('RATE_LIMIT', 'no free code');
 end $$;
 
 create or replace function public.restore_by_student(p_student_id text)
-returns jsonb language sql stable security definer set search_path = public, pg_temp as $$
-  select jsonb_build_object('verification_code', q.verification_code, 'coins_earned', q.coins_earned,
-                            'player_name', q.player_name, 'completed_at', q.completed_at)
-  from public.quest_completions q
-  where q.student_id = nullif(btrim(coalesce(p_student_id, '')), '')
-  order by q.completed_at limit 1
-$$;
+returns jsonb language plpgsql volatile security definer set search_path = public, pg_temp as $$
+declare
+  v_student text := nullif(btrim(coalesce(p_student_id, '')), '');
+  q public.quest_completions;
+begin
+  if v_student is null then return null; end if;
+  q := public.ezq_find_by_student(v_student);
+  if q.id is null then return null; end if;
+  return jsonb_build_object('verification_code', q.verification_code, 'coins_earned', q.coins_earned,
+                            'player_name', q.player_name, 'completed_at', q.completed_at);
+end $$;
 
 create or replace function public.submit_arcade_score(
   p_run_id uuid, p_code text, p_session_id text, p_student_id text, p_player_name text,
@@ -352,17 +482,38 @@ declare
   v_today date := public.ezq_today_msk();
   s public.seasons := public.ezq_active_season();
   prev public.arcade_runs;
+  q public.quest_completions;
+  v_limited boolean;
   v_closed boolean;
   v_used int;
   v_counted int;
 begin
   if not public.ezq_is_code(p_code) then perform public.ezq_fail('BAD_CODE'); end if;
+  v_limited := public.ezq_rl_limited();
   -- Сериализуем отправки одного ученика (лимит и сумма считаются без гонок).
-  perform 1 from public.quest_completions where verification_code = p_code for update;
-  if not found then perform public.ezq_fail('NO_QUEST'); end if;
+  select * into q from public.quest_completions where verification_code = p_code for update;
+  if not found then
+    if v_limited then perform public.ezq_fail('RATE_LIMIT'); end if;
+    perform public.ezq_rl_add(4);
+    perform public.ezq_fail('NO_QUEST');
+  end if;
+  -- Исчерпавшему лимит источнику отвечаем только по своему коду: ник или student_id записи квеста,
+  -- ник в рейтинге или сессия прошлых забегов. Иначе — тот же RATE_LIMIT, что и на несуществующий код.
+  if v_limited and not coalesce(
+       lower(q.player_name) = lower(v_name)
+    or q.student_id = nullif(btrim(coalesce(p_student_id, '')), '')
+    or exists (select 1 from public.leaderboard_entries e
+               where e.verification_code = p_code and lower(e.player_name) = lower(v_name))
+    or exists (select 1 from public.arcade_runs r
+               where r.verification_code = p_code and r.session_id = nullif(p_session_id, '')),
+    false) then
+    perform public.ezq_fail('RATE_LIMIT');
+  end if;
 
   select * into prev from public.arcade_runs where run_id = p_run_id;
   if found then
+    -- run_id — случайный UUID клиента; совпадение с забегом другого кода — не повтор, а подмена.
+    if prev.verification_code <> p_code then perform public.ezq_fail('BAD_CODE', 'run belongs to another code'); end if;
     return public.ezq_standing(prev.verification_code) || jsonb_build_object('counted', prev.counted_score);
   end if;
 
@@ -402,10 +553,15 @@ begin
 end $$;
 
 create or replace function public.get_my_standing(p_code text)
-returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+returns jsonb language plpgsql volatile security definer set search_path = public, pg_temp as $$
 begin
   if not public.ezq_is_code(p_code) then perform public.ezq_fail('BAD_CODE'); end if;
-  if not exists (select 1 from public.quest_completions where verification_code = p_code) then return null; end if;
+  -- Здесь нечем доказать, что код свой, — исчерпавшему лимит источнику не отвечаем ни о каком коде.
+  if public.ezq_rl_limited() then perform public.ezq_fail('RATE_LIMIT'); end if;
+  if not exists (select 1 from public.quest_completions where verification_code = p_code) then
+    perform public.ezq_rl_add(4);
+    return null;
+  end if;
   return public.ezq_standing(p_code);
 end $$;
 
