@@ -1,6 +1,7 @@
 // Процедурная пиксельная графика аркады: матрицы пикселей → offscreen canvas (ни одного файла).
 
 import { VIEW_W } from './engine';
+import { EASYCOIN_SVG } from '../quest/effects';
 
 type Img = HTMLCanvasElement;
 type Palette = Readonly<Record<string, string>>;
@@ -201,30 +202,38 @@ const FLAME_PAL: Palette = { y: '#ffe066', o: '#ff9a2e', r: '#ff5a3c' };
 const FLAME_A = ['.oyyo.', '.oyyo.', '..yo..', '.roor.', '..ro..', '..r...'];
 const FLAME_B = ['.oyyo.', 'oyyyyo', '.oyyo.', '..oo..', '.r..r.', '......'];
 
-// ---------------------------------------------------------------- монетка HUD (12×12)
+// ---------------------------------------------------------------- монетка HUD
 
-const COIN_PAL: Palette = { k: '#7a4a10', y: '#ffc933', Y: '#ffe48a', o: '#e0a21a' };
-const COIN = [
-  '....kkkk....',
-  '..kkyyyykk..',
-  '.kyYYyyyyyk.',
-  '.kyYyyooyyk.',
-  'kyYyyoyyoyyk',
-  'kyYyyoyyyyyk',
-  'kyyyyoyyyyok',
-  'kyyyyoyyoyok',
-  '.kyyyyooyok.',
-  '.kyyyyyyook.',
-  '..kkoooookk.',
-  '....kkkk....',
-];
+// Та же монетка EasyCoin, что в квесте: SVG-константа → Image, загружается один раз.
+let coinImage: HTMLImageElement | null = null;
 
-/** Рисует пиксельную монетку EasyCoin на весь переданный canvas (резкие пиксели). */
+function easycoinImage(): HTMLImageElement {
+  if (!coinImage) {
+    coinImage = new Image();
+    coinImage.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(EASYCOIN_SVG)}`;
+  }
+  return coinImage;
+}
+
+/**
+ * Рисует монетку EasyCoin на весь переданный canvas. Буфер canvas увеличивается под
+ * devicePixelRatio (размер на экране задаёт CSS), чтобы гладкая монетка не мылилась.
+ */
 export function drawCoinIcon(target: HTMLCanvasElement): void {
-  const g = ctx2d(target);
-  g.clearRect(0, 0, target.width, target.height);
-  g.imageSmoothingEnabled = false;
-  g.drawImage(fromMatrix(COIN, COIN_PAL), 0, 0, target.width, target.height);
+  const px = Number(target.dataset.ezqCoinPx) || target.width;
+  target.dataset.ezqCoinPx = String(px);
+  const k = Math.min(3, Math.max(1, Math.ceil(globalThis.devicePixelRatio || 1)));
+  target.width = px * k;
+  target.height = px * k;
+  const img = easycoinImage();
+  const paint = (): void => {
+    const g = ctx2d(target);
+    g.clearRect(0, 0, target.width, target.height);
+    g.imageSmoothingEnabled = true;
+    g.drawImage(img, 0, 0, target.width, target.height);
+  };
+  if (img.complete && img.naturalWidth > 0) paint();
+  else img.addEventListener('load', paint, { once: true });
 }
 
 // ---------------------------------------------------------------- фон

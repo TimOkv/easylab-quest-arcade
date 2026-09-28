@@ -202,7 +202,6 @@
 .ezq-arcade__coin {
   width: 24px;
   height: 24px;
-  image-rendering: pixelated;
 }
 
 .ezq-arcade__record,

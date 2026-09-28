@@ -1,22 +1,29 @@
-// Микроанимации квеста: процедурная монетка, «набегание» счётчика, вылет монет, конфетти.
+// Микроанимации квеста: монетка EasyCoin, «набегание» счётчика, вылет монет, конфетти.
 
 const reducedMotion = (): boolean =>
   typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-/** Пиксельная монетка EasyCoin (inline SVG, статичная разметка). */
+/**
+ * Фирменная монетка EasyCoin (образец — corrections/…12:46:04.png): тёмный круг,
+ * голубой обод, кольцо засечек, белая гранёная «E». Одна константа на квест и аркаду
+ * (аркада рисует её на canvas через Image). Статичная разметка — безопасна для innerHTML.
+ */
+export const EASYCOIN_SVG = `<svg class="ezq-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<circle data-ezq-coin="rim" cx="32" cy="32" r="31" fill="#4fadda"/>
+<circle data-ezq-coin="body" cx="32" cy="32" r="28" fill="#2e2e2e"/>
+<circle data-ezq-coin="ticks" cx="32" cy="32" r="24.5" fill="none" stroke="#8a8a8a" stroke-width="3" pathLength="96" stroke-dasharray="1 1"/>
+<g data-ezq-coin="letter" fill="#ffffff">
+<polygon points="26,14 43,14 43,20 28,20 28,29 40,29 40,35 28,35 28,44 43,44 43,50 26,50 21,45 21,19"/>
+</g>
+<path data-ezq-coin="facets" d="M28 20L22.5 15.5M28 44L22.5 48.5M28 29L25.5 32L28 35M21 32H25.5" fill="none" stroke="#2e2e2e" stroke-width="1.2"/>
+</svg>`;
+
+/** Монетка EasyCoin для DOM (HUD, летящие монетки, триумф). */
 export function coinIcon(className = 'ezq-coin'): HTMLSpanElement {
   const span = document.createElement('span');
   span.className = className;
   span.setAttribute('aria-hidden', 'true');
-  span.innerHTML = `<svg class="ezq-svg" viewBox="0 0 12 12" shape-rendering="crispEdges">
-<rect x="3" y="0" width="6" height="12" fill="#b8860b"/><rect x="0" y="3" width="12" height="6" fill="#b8860b"/>
-<rect x="1" y="1" width="10" height="10" fill="#b8860b"/>
-<rect x="3" y="1" width="6" height="10" fill="#ffc933"/><rect x="1" y="3" width="10" height="6" fill="#ffc933"/>
-<rect x="2" y="2" width="8" height="8" fill="#ffc933"/>
-<rect x="3" y="2" width="3" height="1" fill="#fff3b0"/><rect x="2" y="3" width="1" height="3" fill="#fff3b0"/>
-<rect x="5" y="3" width="3" height="1" fill="#b8860b"/><rect x="4" y="4" width="1" height="4" fill="#b8860b"/>
-<rect x="5" y="5" width="2" height="1" fill="#b8860b"/><rect x="5" y="8" width="3" height="1" fill="#b8860b"/>
-</svg>`;
+  span.innerHTML = EASYCOIN_SVG;
   return span;
 }
 
