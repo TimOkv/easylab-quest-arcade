@@ -317,3 +317,60 @@ describe('экран квеста: уход в дверь идёт шагом (�
     expect(ROOMS_DEF[4].door.exit).toBeNull();
   });
 });
+
+describe('экран квеста: аватарка Изика у реплики (прогон cat-avatar)', () => {
+  const mount = (store: ReturnType<typeof createStore>) => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const c = createQuestController(store);
+    destroy = mountQuestScreen(host, { store, sfx: sfx as never, controller: c, isServerConfigured: false, onGoToArcade() {} }).destroy;
+    return { host, c };
+  };
+  const expectAvatar = (cat: Element | null): void => {
+    expect(cat).not.toBeNull();
+    expect(cat!.textContent).not.toContain('🐱');
+    const img = cat!.querySelector<HTMLImageElement>('img.ezq-cat__face');
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute('src')).toMatch(/cat-avatar\.webp/);
+    expect(img!.getAttribute('alt')).toBe('');
+    expect(img!.getAttribute('aria-hidden')).toBe('true');
+    expect(img!.draggable).toBe(false);
+  };
+
+  it('вступление: рядом с репликой — картинка-аватарка, эмодзи нет; картинка подгружается при монтировании', () => {
+    const loaded: string[] = [];
+    const RealImage = globalThis.Image;
+    vi.stubGlobal('Image', class extends RealImage {
+      set src(v: string) { loaded.push(v); }
+      get src(): string { return loaded[loaded.length - 1] ?? ''; }
+    });
+    const { host } = mount(createStore({ storage: new FakeStorage() }));
+    expect(loaded.some((u) => /cat-avatar\.webp/.test(u))).toBe(true);
+    expectAvatar(host.querySelector('.ezq-cat'));
+  });
+
+  it('панель загадки комнаты 1: в реплике та же аватарка, без «🐱»', () => {
+    let frames: FrameRequestCallback[] = [];
+    let ts = 0;
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb));
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    const pump = (ms: number): void => {
+      for (let t = 0; t < ms; t += 16) {
+        ts += 16;
+        const run = frames;
+        frames = [];
+        for (const cb of run) cb(ts);
+      }
+    };
+    const store = createStore({ storage: new FakeStorage() });
+    const pre = createQuestController(store);
+    expect(pre.startQuest('Аня').ok).toBe(true);
+    expect(pre.submit('var_assign', RIGHT.var_assign).correct).toBe(true); // есть прогресс → без вступления, сразу ходьба
+    const { host } = mount(store);
+    host.querySelector<HTMLButtonElement>('.ezq-qobj[data-puzzle="var_types"]')!.click();
+    for (let i = 0; i < 60 && !host.querySelector('.ezq-qact__go'); i++) pump(100);
+    host.querySelector<HTMLButtonElement>('.ezq-qact__go')!.click();
+    expect(host.querySelector('.ezq-pz-card, .ezq-qpanel__check')).not.toBeNull();
+    expectAvatar(host.querySelector('.ezq-cat'));
+  });
+});

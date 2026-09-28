@@ -19,6 +19,7 @@ import { CAT_H, createCatSprite } from './world/cat-sprite';
 import { easycodeLogoSvg } from './world/brand';
 import { advanceClock, createFixedClock, STEP_MS } from '../core/clock';
 import { DOOR_OPEN_TEXT } from './texts';
+import catAvatarUrl from '../assets/cat-avatar.webp';
 
 export { DOOR_OPEN_TEXT };
 
@@ -75,7 +76,11 @@ const isCoarse = (): boolean => typeof matchMedia === 'function' && matchMedia('
 
 function catBubble(lines: string[]): HTMLElement {
   const wrap = el('div', 'ezq-cat');
-  const face = el('span', 'ezq-cat__face', '🐱');
+  const face = el('img', 'ezq-cat__face');
+  face.src = catAvatarUrl;
+  face.alt = '';
+  face.draggable = false;
+  face.decoding = 'async';
   face.setAttribute('aria-hidden', 'true');
   const bubble = el('div', 'ezq-cat__bubble');
   for (const line of lines) bubble.appendChild(el('p', 'ezq-cat__line', line));
@@ -101,6 +106,9 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     timers.add(id);
   };
   let stopConfetti: () => void = () => {};
+
+  // Аватарка Изика — заранее, чтобы в панели загадки не мигало пустое место.
+  new Image().src = catAvatarUrl;
 
   const root = el('div', 'ezq-screen ezq-quest');
   const fxLayer = el('div', 'ezq-quest__fx');

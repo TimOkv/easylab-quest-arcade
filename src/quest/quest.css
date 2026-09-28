@@ -334,15 +334,15 @@
 
 .ezq-cat__face {
   flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 48px;
+  display: block;
+  box-sizing: border-box;
+  width: 64px;
+  height: 64px;
   border: 3px solid var(--ezq-wood);
   border-radius: 50%;
-  background: var(--ezq-orange);
-  font-size: 28px;
+  object-fit: cover;
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 .ezq-cat__bubble {
