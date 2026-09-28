@@ -3,7 +3,9 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createInitialState, createStore, SAVE_KEY } from '../src/core/state';
 import { createQuestController } from '../src/quest/controller';
-import { mountQuestScreen } from '../src/quest/screen';
+import { doorWalkSeconds, mountQuestScreen } from '../src/quest/screen';
+import { ROOMS_DEF, type Pt } from '../src/quest/world/rooms';
+import { buildGrid, findPath, isWalkable } from '../src/quest/world/walk';
 import { PUZZLES_BY_ROOM, type PuzzleId } from '../src/core/types';
 import { FakeStorage, fakeServer } from './services/helpers';
 import { createCuratorSync } from '../src/services/curator';
@@ -219,5 +221,99 @@ describe('экран квеста: «Поверни телефон» (Решен
     setPortrait(false);
     pump(1600);
     expect(q('.ezq-triumph')).not.toBeNull();
+  });
+});
+
+describe('экран квеста: библиотека, выход из закутка у стола (таск 04)', () => {
+  it('у старого компьютера ←/↓ до решения загадок — ни «Дверь закрыта», ни ухода; после решения ← уводит в дверь', () => {
+    let frames: FrameRequestCallback[] = [];
+    let ts = 0;
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb));
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    const pump = (ms: number): void => {
+      for (let t = 0; t < ms; t += 16) {
+        ts += 16;
+        const run = frames;
+        frames = [];
+        for (const cb of run) cb(ts);
+      }
+    };
+    const key = (type: 'keydown' | 'keyup', code: string): void => {
+      window.dispatchEvent(new KeyboardEvent(type, { code, bubbles: true }));
+    };
+
+    const store = createStore({ storage: new FakeStorage() });
+    const c = createQuestController(store);
+    expect(c.startQuest('Аня').ok).toBe(true);
+    for (const n of [1, 2] as const) {
+      for (const pid of PUZZLES_BY_ROOM[n]) expect(c.submit(pid, RIGHT[pid]).correct).toBe(true);
+      expect(c.advance()).toBe(true);
+    }
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    destroy = mountQuestScreen(host, { store, sfx: sfx as never, controller: c, isServerConfigured: false, onGoToArcade() {} }).destroy;
+    const q = <T extends Element = HTMLElement>(sel: string): T | null => host.querySelector<T>(sel as never) as T | null;
+    const root = q('.ezq-quest')!;
+    const doorSay = (): boolean => !!q('.ezq-qsay--door') && !q('.ezq-qsay--door')!.hidden;
+
+    // Изик идёт к старому компьютеру и встаёт в закутке у стола.
+    q<HTMLButtonElement>('.ezq-qobj[data-puzzle="while_pc"]')!.click();
+    for (let i = 0; i < 60 && !q('.ezq-qact__go'); i++) pump(100);
+    expect(q('.ezq-qact__go')).not.toBeNull();
+    for (const code of ['ArrowLeft', 'ArrowDown']) {
+      key('keydown', code);
+      pump(1000);
+      key('keyup', code);
+      expect(doorSay(), `${code}: «Дверь закрыта» у компьютера`).toBe(false);
+      expect(root.dataset.mode).toBe('walk');
+    }
+
+    for (const pid of PUZZLES_BY_ROOM[3]) expect(c.submit(pid, RIGHT[pid]).correct).toBe(true);
+    pump(100);
+    expect(root.dataset.mode).toBe('walk');
+    key('keydown', 'ArrowLeft');
+    pump(200);
+    key('keyup', 'ArrowLeft');
+    expect(root.dataset.mode).toBe('door');
+    expect(store.get().navigation.currentRoomIndex).toBe(4);
+  });
+});
+
+describe('экран квеста: уход в дверь идёт шагом (таск 04, доработка)', () => {
+  const STEP_SPEED = 170; // px/с — скорость шага Изика при уходе в дверь
+  const len = (route: Pt[]): number => route.slice(1).reduce((sum, b, i) => sum + Math.hypot(b.x - route[i].x, b.y - route[i].y), 0);
+  const exitRoute = (room: 1 | 2 | 3, from: Pt): Pt[] => {
+    const def = ROOMS_DEF[room];
+    const exit = def.door.exit!;
+    return [from, ...findPath(buildGrid(def), from, exit.approach), exit.walkTo];
+  };
+
+  it('библиотека: из закутка у стола и от точки появления средняя скорость ≈ скорости шага, а не 800 px за секунду', () => {
+    for (const from of [{ x: 410, y: 745 }, ROOMS_DEF[3].objects.find((o) => o.id === 'old_pc')!.approach, { x: 602, y: 897 }]) {
+      const route = exitRoute(3, from);
+      const speed = len(route) / doorWalkSeconds(route);
+      expect(speed, `из (${from.x},${from.y}), путь ${len(route).toFixed(0)} px`).toBeGreaterThan(STEP_SPEED * 0.95);
+      expect(speed).toBeLessThan(STEP_SPEED * 1.05);
+    }
+  });
+
+  it('спальня и кухня: длительность из любой точки зоны выхода та же, что на HEAD (0,4…1 с); на чердаке выхода нет', () => {
+    const head = (route: Pt[]): number => Math.min(1, Math.max(0.4, len(route) / STEP_SPEED)); // формула HEAD 0318fee
+    for (const room of [1, 2] as const) {
+      const def = ROOMS_DEF[room];
+      const grid = buildGrid(def);
+      const exit = def.door.exit!;
+      let n = 0;
+      for (let y = exit.approach.y - exit.radius; y <= exit.approach.y + exit.radius; y += 4)
+        for (let x = exit.approach.x - exit.radius; x <= exit.approach.x + exit.radius; x += 4) {
+          const p = { x, y };
+          if (!isWalkable(grid, p) || Math.hypot(x - exit.approach.x, y - exit.approach.y) > exit.radius) continue;
+          const route = exitRoute(room, p);
+          expect(doorWalkSeconds(route), `комната ${room}, (${x},${y})`).toBeCloseTo(head(route), 9);
+          n++;
+        }
+      expect(n).toBeGreaterThan(10);
+    }
+    expect(ROOMS_DEF[4].door.exit).toBeNull();
   });
 });

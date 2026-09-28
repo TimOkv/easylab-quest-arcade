@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildGrid, findPath, isWalkable } from '../src/quest/world/walk';
-import type { Pt, Rect } from '../src/quest/world/rooms';
+import { exitZoneAt, type Pt, type Rect } from '../src/quest/world/rooms';
 
 const R = (x1: number, y1: number, x2: number, y2: number): Rect => ({ x: x1, y: y1, w: x2 - x1, h: y2 - y1 });
 
@@ -263,42 +263,55 @@ describe('библиотека: Изик не стоит на столе', () =>
 });
 
 describe('библиотека: к светящейся двери стрелками', () => {
-  // Как экран: зона выхода — не дальше exit.radius от exit.approach; сработала — Изик идёт
-  // по сетке до exit.approach, затем по прямой к exit.walkTo.
+  // Та же проверка, что на экране (exitZoneAt); после двух решённых загадок любая зона выхода
+  // запускает уход: Изик идёт по сетке до exit.approach, затем по прямой к exit.walkTo.
   const def = ROOMS_DEF[3];
   const grid = buildGrid(def);
   const exit = def.door.exit!;
+  const pc = def.objects.find((o) => o.id === 'old_pc')!;
   const LEFT = { x: -1, y: 0 };
   const DOWN = { x: 0, y: 1 };
   const LEFT_DOWN = { x: -1, y: 1 };
-  const inExit = (p: Pt) => Math.hypot(p.x - exit.approach.x, p.y - exit.approach.y) <= exit.radius;
+  const NOOK = { x: 410, y: 745 }; // закуток у стола: слева стол, справа кресло, внизу корзина и стопки
 
-  /** Держит стрелки по плану (вектор, секунд) от точки появления; где сработала зона выхода, или null. */
-  function hold(plan: Array<[Pt, number]>): Pt | null {
-    const w = createWalker(grid, def.spawn);
+  /** Держит стрелки по плану (вектор, секунд) из точки start; где сработала зона выхода, или null. */
+  function hold(start: Pt, plan: Array<[Pt, number]>): Pt | null {
+    const w = createWalker(grid, start);
     for (const [v, sec] of plan) {
       w.setInput(v);
       for (let i = 0; i < sec * 60; i++) {
         w.step(1 / 60);
-        if (inExit(w.pos)) return { ...w.pos };
+        if (exitZoneAt(exit, w.pos, v)) return { ...w.pos };
       }
     }
     return null;
   }
 
-  it.each([
+  const PLANS = [
     ['↓', [[DOWN, 4]]],
+    ['←', [[LEFT, 4]]],
     ['↓, потом ←', [[DOWN, 4], [LEFT, 4]]],
     ['← и ↓ вместе', [[LEFT_DOWN, 6]]],
     ['←, потом ↓', [[LEFT, 4], [DOWN, 4]]],
     ['←, потом ↓, потом ← и ↓', [[LEFT, 4], [DOWN, 4], [LEFT_DOWN, 4]]],
-  ] as Array<[string, Array<[Pt, number]>]>)('%s: зона выхода срабатывает, уход в дверь — в обход мебели и перед стопками', (_, plan) => {
-    const at = hold(plan);
+  ] as Array<[string, Array<[Pt, number]>]>;
+  const STARTS = [
+    ['закуток у стола (410,745)', NOOK],
+    ['точка подхода к старому компьютеру', pc.approach],
+    ['точка появления', def.spawn],
+  ] as Array<[string, Pt]>;
+  const CASES = STARTS.flatMap(([where, start]) => PLANS.map(([keys, plan]) => [where, keys, start, plan] as const));
+
+  it.each(CASES)('%s, %s: зона выхода срабатывает, уход в дверь — в обход мебели и перед стопками', (_w, _k, start, plan) => {
+    const at = hold(start, plan);
     expect(at, 'зона выхода не сработала').not.toBeNull();
-    expect(inExit(def.spawn)).toBe(false);
     const route = [at!, ...findPath(grid, at!, exit.approach), exit.walkTo];
     expect(route.at(-2)).toEqual(exit.approach);
     for (let i = 1; i < route.length; i++)
       for (const o of def.obstacles) expect(segmentHits(route[i - 1], route[i], o), `отрезок ${i} через (${o.x},${o.y},${o.w},${o.h})`).toBe(false);
+  });
+
+  it('стоя на месте, Изик не в зоне выхода ни в точке появления, ни у старого компьютера', () => {
+    for (const p of [def.spawn, pc.approach, NOOK]) expect(exitZoneAt(exit, p), `(${p.x},${p.y})`).toBeNull();
   });
 });

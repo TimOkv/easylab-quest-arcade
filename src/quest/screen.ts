@@ -13,7 +13,7 @@ import { PUZZLES, type PuzzleView } from './puzzles';
 import { button, el } from '../core/dom';
 import { createRoomStage, STAGE_H, STAGE_W } from './scene';
 import { coinIcon, confetti, countUp, flyCoins } from './effects';
-import { ROOMS_DEF, type DecorSfx, type Dir, type Pt, type RoomDef, type RoomObject } from './world/rooms';
+import { ROOMS_DEF, exitZoneAt, type DecorSfx, type Dir, type Pt, type RoomDef, type RoomObject } from './world/rooms';
 import { buildGrid, createWalker, findPath, type Grid, type Walker } from './world/walk';
 import { CAT_H, createCatSprite } from './world/cat-sprite';
 import { easycodeLogoSvg } from './world/brand';
@@ -50,6 +50,17 @@ const WIPE_S = 0.6;
 const FADE_S = 0.3;
 const CARD_S = 1.5;
 const DOOR_WALK_SPEED = 170;
+
+/**
+ * Сколько секунд Изик идёт по маршруту ухода в дверь (ломаная от точки срабатывания до walkTo):
+ * шагом DOOR_WALK_SPEED, не короче 0,4 с. Верхнего предела нет — длинный путь (библиотека) идёт шагом,
+ * а короткие маршруты других комнат (≤ 170 px) длятся как раньше.
+ */
+export function doorWalkSeconds(route: readonly Pt[]): number {
+  let len = 0;
+  for (let i = 1; i < route.length; i++) len += Math.hypot(route[i].x - route[i - 1].x, route[i].y - route[i - 1].y);
+  return Math.max(0.4, len / DOOR_WALK_SPEED);
+}
 // Декор (таблица «Декор»): оживание, облачко, не чаще раза в 4 с на предмет.
 const DECOR_ALIVE_S = 0.4;
 const SAY_S = 2.5;
@@ -341,12 +352,18 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     }
     const exit = def.door.exit;
     if (exit) {
-      if (within(exit)) {
+      const zone = exitZoneAt(exit, walker.pos, keyVector());
+      if (zone === 'door') {
         if (!inZone.has('door')) {
           inZone.add('door');
           onDoorZone();
         }
-      } else inZone.delete('door');
+      } else {
+        inZone.delete('door');
+        // Доп. зона (закуток у мебели): стрелки к двери уводят в неё, но только в открытую —
+        // «Дверь закрыта» остаётся за основной зоной у двери.
+        if (zone === 'nudge' && controller.isRoomCleared(room)) startDoor();
+      }
     }
     renderBrand();
   }
@@ -606,7 +623,7 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     hideTip();
     // Зона сработала не в точке подхода — сначала по сетке до неё, потом в проём.
     const route = [from, ...findPath(grid, from, exit.approach), exit.walkTo];
-    const walkS = reduced ? 0 : Math.min(1, Math.max(0.4, routeLen(route) / DOOR_WALK_SPEED));
+    const walkS = reduced ? 0 : doorWalkSeconds(route);
     const dir = route.length > 2 ? faceTo(route[0], route[1], exit.dir) : exit.dir;
     door = { phase: 'out', t: simT, from, to: exit.walkTo, route, walkS, pos: { ...from }, dir, walking: !reduced, alpha: 1, reduced };
     if (reduced) setDoorPhase('close');

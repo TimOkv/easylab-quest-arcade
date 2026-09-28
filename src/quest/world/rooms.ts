@@ -57,6 +57,12 @@ export interface DoorExit {
   /** Куда Изик делает 2–3 шага, уходя в проём (может быть вне пола). */
   walkTo: Pt;
   dir: Dir;
+  /**
+   * Необязательные доп. зоны выхода: здесь Изик упирается в мебель, а дверь рядом. Стрелки в
+   * сторону двери (к `walkTo`) тоже запускают уход, но только у открытой двери; «Дверь закрыта»
+   * тут не показывается. Маршрут тот же: по сетке до `approach`, потом к `walkTo`.
+   */
+  nudge?: Rect[];
 }
 
 export interface DoorEntry {
@@ -271,7 +277,17 @@ const LIBRARY: RoomDef = {
     // сцены, а уход в проём идёт по y=897 — ниже нижнего края всех стопок (≈890), то есть перед ними.
     // Зона широкая: со стрелками ←/↓ Изик упирается в стопки (до ≈(535,828)) — экран сначала
     // доводит его по сетке до точки подхода, потом в проём.
-    exit: { rect: r(38, 475, 152, 900), approach: p(608, 897), radius: 105, walkTo: p(110, 897), dir: 'left' },
+    // Доп. зоны (nudge): закуток у стола перед старым компьютером (слева стол, справа кресло, внизу
+    // корзина и стопки) и пол справа от стопок, где Изик упирается в них со стрелкой ←. Стрелки к
+    // двери отсюда тоже уводят в неё — по полу через точку подхода.
+    exit: {
+      rect: r(38, 475, 152, 900),
+      approach: p(608, 897),
+      radius: 105,
+      walkTo: p(110, 897),
+      dir: 'left',
+      nudge: [r(395, 625, 540, 770), r(530, 755, 600, 835)],
+    },
     // Вход — снизу экрана, будто Изик поднялся по лестнице.
     entry: { from: p(700, 898), dir: 'up' },
   },
@@ -349,3 +365,18 @@ const ATTIC: RoomDef = {
 };
 
 export const ROOMS_DEF: Record<RoomIndex, RoomDef> = { 1: BEDROOM, 2: KITCHEN, 3: LIBRARY, 4: ATTIC };
+
+/**
+ * Где Изик относительно выхода: 'door' — у двери (не дальше `radius` от `approach`);
+ * 'nudge' — в доп. зоне `exit.nudge` и жмёт стрелки в сторону двери; иначе null.
+ */
+export type ExitZone = 'door' | 'nudge' | null;
+
+/** Проверка зоны выхода — одна на экран и тесты. `input` — вектор стрелок (-1…1). */
+export function exitZoneAt(exit: DoorExit, pos: Pt, input: Pt = { x: 0, y: 0 }): ExitZone {
+  if (Math.hypot(pos.x - exit.approach.x, pos.y - exit.approach.y) <= exit.radius) return 'door';
+  if (!exit.nudge) return null;
+  const toward = input.x * (exit.walkTo.x - pos.x) + input.y * (exit.walkTo.y - pos.y) > 0;
+  if (toward && exit.nudge.some((z) => pos.x >= z.x && pos.x <= z.x + z.w && pos.y >= z.y && pos.y <= z.y + z.h)) return 'nudge';
+  return null;
+}
