@@ -55,6 +55,9 @@ function safeLocalStorage(): Storage | null {
 
 const ROOMS: readonly RoomIndex[] = [1, 2, 3, 4];
 
+/** События, на которых браузер может дать пользовательскую активацию для звука. */
+const UNLOCK_EVENTS = ['pointerdown', 'pointerup', 'touchend', 'mousedown', 'click', 'keydown'] as const;
+
 /** Полезная нагрузка EASYLAB_QUEST_COMPLETED из состояния; null — квест не завершён (нет кода или даты). */
 export function questCompletedPayload(s: EasyQuestGameState): QuestCompletedPayload | null {
   const q = s.quest;
@@ -157,18 +160,21 @@ export function mountApp(rootEl: HTMLElement, opts: MountAppOptions = {}): AppHa
 
   const unblock = blockGestures(rootEl);
 
-  // AudioContext создаётся по первому жесту пользователя (политика автоплея).
-  const offUnlock = (): void => {
-    rootEl.removeEventListener('pointerdown', unlock);
-    rootEl.removeEventListener('keydown', unlock);
-  };
+  // AudioContext создаётся и будится жестом пользователя (политика автоплея). Браузер даёт активацию
+  // не на всех событиях: у касания — на pointerup/touchend/click, а не на pointerdown (Chrome Android,
+  // iOS Safari); клавиши при фокусе на <body> в корень не всплывают. Поэтому слушаем все такие события
+  // на документе (capture) и пробуем на каждом, пока контекст не заработает; iOS может снова
+  // «прервать» его (звонок, другое приложение) — тогда следующий жест разбудит заново.
+  const unlockDoc = rootEl.ownerDocument;
   const unlock = (): void => {
+    if (audio.get()?.state === 'running') return;
     sfx.unlock();
     music.unlock();
-    offUnlock();
   };
-  rootEl.addEventListener('pointerdown', unlock);
-  rootEl.addEventListener('keydown', unlock);
+  for (const type of UNLOCK_EVENTS) unlockDoc.addEventListener(type, unlock, { capture: true, passive: true });
+  const offUnlock = (): void => {
+    for (const type of UNLOCK_EVENTS) unlockDoc.removeEventListener(type, unlock, { capture: true });
+  };
 
   const host = document.createElement('div');
   host.className = 'ezq-screen-host';

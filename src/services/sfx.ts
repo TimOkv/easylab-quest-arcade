@@ -91,6 +91,20 @@ function defaultAudioContext(): AudioContext | null {
   }
 }
 
+/**
+ * Разбудить контекст: любое состояние, кроме running, — и `suspended`, и iOS-шное `interrupted`
+ * (после звонка или возврата из другого приложения). Вне пользовательской активации браузер
+ * resume() не выполнит — поэтому разблокировку пробуют на каждом жесте, пока контекст не заработает.
+ */
+function wake(c: AudioContext): void {
+  if ((c.state as string) === 'running' || c.state === 'closed') return;
+  try {
+    void c.resume().catch(() => undefined);
+  } catch {
+    /* звук не критичен */
+  }
+}
+
 export function createAudioContextProvider(factory: () => AudioContext | null = defaultAudioContext): AudioContextProvider {
   let ctx: AudioContext | null = null;
   let failed = false;
@@ -101,7 +115,7 @@ export function createAudioContextProvider(factory: () => AudioContext | null = 
         ctx = factory();
         failed = !ctx;
       }
-      if (ctx && ctx.state === 'suspended') void ctx.resume().catch(() => undefined);
+      if (ctx) wake(ctx);
       return ctx;
     },
   };
@@ -134,7 +148,7 @@ export function createSfx(isMuted: () => boolean, audio: AudioContextProvider = 
     const c = audio.get();
     const out = c ? bus(c) : null;
     if (!c || !out) return;
-    if (c.state === 'suspended') void c.resume().catch(() => undefined);
+    wake(c);
     const t0 = c.currentTime + 0.01;
     for (const n of PATCHES[name]) {
       try {
