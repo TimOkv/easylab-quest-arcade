@@ -559,6 +559,8 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     t: number; // начало фазы, время сцены
     from: Pt;
     to: Pt;
+    /** Уход в дверь: по сетке до exit.approach, затем к exit.walkTo (первая точка — from). */
+    route: Pt[];
     walkS: number;
     pos: Pt;
     dir: Dir;
@@ -569,6 +571,29 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
 
   const smooth = (k: number): number => k * k * (3 - 2 * k);
   const walkTime = (a: Pt, b: Pt): number => Math.min(1, Math.max(0.4, Math.hypot(b.x - a.x, b.y - a.y) / DOOR_WALK_SPEED));
+  const routeLen = (route: Pt[]): number => route.reduce((sum, p, i) => (i ? sum + Math.hypot(p.x - route[i - 1].x, p.y - route[i - 1].y) : 0), 0);
+  const faceTo = (a: Pt, b: Pt, last: Dir): Dir => {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) return last;
+    return Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up';
+  };
+  /** Точка на ломаной при доле пути k; на последнем отрезке Изик смотрит по exit.dir. */
+  function alongRoute(route: Pt[], k: number, lastDir: Dir): { pos: Pt; dir: Dir } {
+    let left = routeLen(route) * k;
+    for (let i = 1; i < route.length; i++) {
+      const a = route[i - 1];
+      const b = route[i];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      const dir = i === route.length - 1 ? lastDir : faceTo(a, b, lastDir);
+      if (left <= len || i === route.length - 1) {
+        const f = len > 0 ? Math.min(1, left / len) : 1;
+        return { pos: { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f }, dir };
+      }
+      left -= len;
+    }
+    return { pos: { ...route[route.length - 1] }, dir: lastDir };
+  }
 
   /** Изик в зоне открытой двери: номер комнаты сохраняется сразу, дальше — только анимация. */
   function startDoor(): void {
@@ -579,7 +604,11 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     setMode('door');
     hideSay();
     hideTip();
-    door = { phase: 'out', t: simT, from, to: exit.walkTo, walkS: reduced ? 0 : walkTime(from, exit.walkTo), pos: { ...from }, dir: exit.dir, walking: !reduced, alpha: 1, reduced };
+    // Зона сработала не в точке подхода — сначала по сетке до неё, потом в проём.
+    const route = [from, ...findPath(grid, from, exit.approach), exit.walkTo];
+    const walkS = reduced ? 0 : Math.min(1, Math.max(0.4, routeLen(route) / DOOR_WALK_SPEED));
+    const dir = route.length > 2 ? faceTo(route[0], route[1], exit.dir) : exit.dir;
+    door = { phase: 'out', t: simT, from, to: exit.walkTo, route, walkS, pos: { ...from }, dir, walking: !reduced, alpha: 1, reduced };
     if (reduced) setDoorPhase('close');
   }
 
@@ -611,7 +640,9 @@ export function mountQuestScreen(host: HTMLElement, deps: QuestScreenDeps): { de
     const age = simT - d.t;
     if (d.phase === 'out') {
       const k = Math.min(1, age / d.walkS);
-      d.pos = { x: d.from.x + (d.to.x - d.from.x) * k, y: d.from.y + (d.to.y - d.from.y) * k };
+      const at = alongRoute(d.route, k, def.door.exit?.dir ?? d.dir);
+      d.pos = at.pos;
+      d.dir = at.dir;
       d.alpha = 1 - 0.5 * Math.max(0, (k - 0.5) / 0.5); // тает в проёме
       if (k >= 1) {
         d.walking = false;

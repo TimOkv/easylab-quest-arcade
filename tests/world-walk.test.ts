@@ -203,3 +203,102 @@ describe('walk: Изик не наезжает на мебель сбоку', ()
     expect(bad.slice(0, 5)).toEqual([]);
   });
 });
+
+describe('библиотека: Изик не стоит на столе', () => {
+  // Силуэт стола по фону library.webp (снято по сетке, не из разметки): столешница, передняя
+  // панель, левая ножка и тумба с ящиками доходят до пола на y≈770; правый край стола с ящиками — до y≈620.
+  const DESK = [R(150, 625, 378, 770), R(378, 450, 470, 620)];
+  const def = ROOMS_DEF[3];
+  const grid = buildGrid(def);
+  const onDesk = (p: Pt) => DESK.some((d) => inside(p, d));
+
+  it('ни одна точка, где может стоять Изик, не лежит на силуэте стола (полоса под столешницей)', () => {
+    const bad: string[] = [];
+    for (let y = 600; y <= 790; y += 2) for (let x = 100; x <= 500; x += 2) if (isWalkable(grid, { x, y }) && onDesk({ x, y })) bad.push(`(${x},${y})`);
+    expect(bad.slice(0, 5)).toEqual([]);
+  });
+
+  it('точка появления, точки подхода и путь входа — не на столе', () => {
+    const pts = [def.spawn, ...def.objects.map((o) => o.approach), def.door.exit!.approach];
+    for (const p of pts) expect(onDesk(p), `(${p.x},${p.y})`).toBe(false);
+    const entry = def.door.entry!;
+    for (const d of DESK) expect(segmentHits(entry.from, def.spawn, d)).toBe(false);
+  });
+
+  it('вход снизу экрана: Изик идёт вверх к точке появления, не задевая мебель', () => {
+    const entry = def.door.entry!;
+    expect(entry.dir).toBe('up');
+    expect(entry.from.y).toBeGreaterThanOrEqual(880);
+    expect(def.spawn.y).toBeLessThan(entry.from.y);
+    for (const o of def.obstacles) expect(segmentHits(entry.from, def.spawn, o)).toBe(false);
+  });
+
+  it('выход — нижняя левая дверь (x≈40–150, y≈475–900), верхняя левая дверь (x≈285–378, y≈125–405) не светится', () => {
+    const exit = def.door.exit!;
+    const c = { x: exit.rect.x + exit.rect.w / 2, y: exit.rect.y + exit.rect.h / 2 };
+    expect(inside(c, R(40, 475, 150, 900))).toBe(true);
+    expect(exit.rect.x + exit.rect.w).toBeLessThanOrEqual(160);
+    expect(inside(c, R(285, 125, 378, 405))).toBe(false);
+    expect(exit.walkTo.x).toBeLessThan(150); // уходит в проём нижней левой двери
+    expect(exit.walkTo.y).toBeGreaterThanOrEqual(890); // к низу двери, у кромки сцены
+    // точка появления не в зоне выхода: после входа и перезагрузки переход сам не запускается
+    expect(Math.hypot(def.spawn.x - exit.approach.x, def.spawn.y - exit.approach.y)).toBeGreaterThan(exit.radius);
+  });
+
+  it('уход в дверь идёт перед стопками книг: отрезок approach→walkTo не пересекает ни одно препятствие', () => {
+    const exit = def.door.exit!;
+    for (const o of def.obstacles) expect(segmentHits(exit.approach, exit.walkTo, o), `через (${o.x},${o.y},${o.w},${o.h})`).toBe(false);
+  });
+
+  it('логотип — на стекле ЭЛТ-экрана (тёмное стекло в светлой рамке x≈286–338, y≈445–500), не на папках справа (x≥340)', () => {
+    const pc = def.objects.find((o) => o.id === 'old_pc')!;
+    const b = pc.brandRect!;
+    expect(b.x).toBeGreaterThanOrEqual(286);
+    expect(b.x + b.w).toBeLessThanOrEqual(338);
+    expect(b.y).toBeGreaterThanOrEqual(445);
+    expect(b.y + b.h).toBeLessThanOrEqual(500);
+    // свечение предмета охватывает весь монитор (x≈237–340, y≈395–535)
+    for (const p of [{ x: 238, y: 396 }, { x: 339, y: 534 }]) expect(inside(p, pc.rect)).toBe(true);
+  });
+});
+
+describe('библиотека: к светящейся двери стрелками', () => {
+  // Как экран: зона выхода — не дальше exit.radius от exit.approach; сработала — Изик идёт
+  // по сетке до exit.approach, затем по прямой к exit.walkTo.
+  const def = ROOMS_DEF[3];
+  const grid = buildGrid(def);
+  const exit = def.door.exit!;
+  const LEFT = { x: -1, y: 0 };
+  const DOWN = { x: 0, y: 1 };
+  const LEFT_DOWN = { x: -1, y: 1 };
+  const inExit = (p: Pt) => Math.hypot(p.x - exit.approach.x, p.y - exit.approach.y) <= exit.radius;
+
+  /** Держит стрелки по плану (вектор, секунд) от точки появления; где сработала зона выхода, или null. */
+  function hold(plan: Array<[Pt, number]>): Pt | null {
+    const w = createWalker(grid, def.spawn);
+    for (const [v, sec] of plan) {
+      w.setInput(v);
+      for (let i = 0; i < sec * 60; i++) {
+        w.step(1 / 60);
+        if (inExit(w.pos)) return { ...w.pos };
+      }
+    }
+    return null;
+  }
+
+  it.each([
+    ['↓', [[DOWN, 4]]],
+    ['↓, потом ←', [[DOWN, 4], [LEFT, 4]]],
+    ['← и ↓ вместе', [[LEFT_DOWN, 6]]],
+    ['←, потом ↓', [[LEFT, 4], [DOWN, 4]]],
+    ['←, потом ↓, потом ← и ↓', [[LEFT, 4], [DOWN, 4], [LEFT_DOWN, 4]]],
+  ] as Array<[string, Array<[Pt, number]>]>)('%s: зона выхода срабатывает, уход в дверь — в обход мебели и перед стопками', (_, plan) => {
+    const at = hold(plan);
+    expect(at, 'зона выхода не сработала').not.toBeNull();
+    expect(inExit(def.spawn)).toBe(false);
+    const route = [at!, ...findPath(grid, at!, exit.approach), exit.walkTo];
+    expect(route.at(-2)).toEqual(exit.approach);
+    for (let i = 1; i < route.length; i++)
+      for (const o of def.obstacles) expect(segmentHits(route[i - 1], route[i], o), `отрезок ${i} через (${o.x},${o.y},${o.w},${o.h})`).toBe(false);
+  });
+});
