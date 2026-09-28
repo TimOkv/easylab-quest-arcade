@@ -322,7 +322,7 @@ npx vitest run tests/rules.test.ts            # один файл
 npm run check:css                             # только линтер префикса ezq-
 npx playwright test                           # все e2e (= npm run test:e2e), ~7 мин
 npx playwright test tests/e2e/arcade.spec.ts  # один e2e-файл (webServer-сборки всё равно поднимутся)
-EZQ_FINAL_SHOTS=1 npx playwright test tests/e2e/acceptance.spec.ts  # перезаписать final-*.png и walk-*.png (avatar.spec.ts — avatar-*.png)
+EZQ_FINAL_SHOTS=1 npx playwright test tests/e2e/acceptance.spec.ts  # снять final-*.png и walk-*.png (avatar.spec.ts — avatar-*.png)
 EZQ_SHOTS=1 npx playwright test tests/e2e/arcade.spec.ts            # снять 2 пропускаемых теста скриншотов аркады
 python3 scripts/prep-rooms.py                 # пересобрать src/assets/rooms/*.webp из исходников (нужен Pillow); --preview <папка> — PNG с разметкой заплаток
 ```
@@ -336,7 +336,7 @@ src/app/           # mountApp: проводка сервисов, роутер �
 src/quest/         # 8 загадок (puzzles.ts + puzzle-ui.ts), controller.ts (ход квеста без DOM), scene.ts (сцена 1600×900), screen.ts (весь UI квеста), effects.ts, texts.ts
 src/quest/world/   # rooms.ts (разметка 4 комнат), walk.ts (сетка + A*), cat-sprite.ts (пиксельный Изик), brand.ts (SVG-логотип Easycode)
 src/assets/rooms/  # bedroom|kitchen|library|attic.webp — фоны комнат; src/ — исходные JPG для prep-rooms.py (в бандл не идут)
-src/assets/cat-avatar.webp  # аватарка Изика в реплике котика (192×192, круглая альфа), из corrections/36594758-…PNG
+src/assets/cat-avatar.webp  # аватарка Изика в реплике котика (192×192, круглая альфа); исходный PNG удалён из дерева, есть в истории git (коммит 7bb530f)
 src/arcade/        # движок (engine.ts; clock.ts — реэкспорт core/clock), canvas-рендер, процедурные спрайты, экран профиля
 src/leaderboard/   # экран рейтинга: ТОП-10, бейджи ТОП-3, позиция, сезон, авто-обновление
 src/services/      # rest (fetch → PostgREST), curator, leaderboard (очередь), bridge (postMessage), sfx + music (WebAudio-синтез)
@@ -441,7 +441,7 @@ tests/             # vitest (*.test.ts, services/, sql/, helpers/css-lint.ts), e
 - `reuseExistingServer: false` и `strictPort`: занятые 5231/5232/5199 валят прогон.
 - Прохождение квеста через UI — `tests/e2e/support/flow.ts` (тексты берёт из `src/quest/texts.ts`: `screen.ts` тянет CSS и картинки, Node их не загрузит); мобильный e2e квеста — в горизонтали.
 - `tests/e2e/avatar.spec.ts` — аватарка Изика на 6 устройствах (ПК, ноутбук, iPhone, Android, iPhone SE, iPad; вступление + загадка комнаты 1).
-- Скриншоты — `tests/e2e/__screenshots__/`: `final-*.png`, `walk-*.png` и `avatar-*.png` (в репо) пишутся только при `EZQ_FINAL_SHOTS=1`; `EZQ_SHOTS=1` включает скриншоты аркады (`arcade-*.png`, в репо не входят).
+- Скриншоты — `tests/e2e/__screenshots__/`: `final-*.png`, `walk-*.png` и `avatar-*.png` пишутся только при `EZQ_FINAL_SHOTS=1`, `EZQ_SHOTS=1` включает скриншоты аркады (`arcade-*.png`); папка в `.gitignore`, в репо снимков нет.
 
 ## Подводные камни
 

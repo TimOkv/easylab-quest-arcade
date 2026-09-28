@@ -9,3 +9,6 @@ __pycache__/
 Easycode брендбук.pdf
 test-results/
 playwright-report/
+
+# снимки e2e пишутся по флагу EZQ_FINAL_SHOTS / EZQ_SHOTS и в репозиторий не входят
+tests/e2e/__screenshots__/
